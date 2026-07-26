@@ -1,16 +1,26 @@
 # Buzz Umbrel Community App Store
 
+> [!CAUTION]
+> **NOT READY FOR INSTALLATION.** The current Buzz Relay Umbrel package has a
+> confirmed PostgreSQL authentication/startup defect that causes the relay to
+> restart-loop during first initialization. Do not install or use this package
+> with real data. A corrected release will follow after clean umbrelOS runtime
+> testing.
+
 This Community App Store packages Block's Buzz relay for umbrelOS with
 PostgreSQL, Redis, MinIO, persistent git storage, and a local configuration
 page. It uses the official Buzz relay image and never needs a user's Nostr
 private key.
 
-> **Validation status:** static tests and the official Umbrel app linter are
-> part of this repository. A fresh install, upgrade, owner reset, and backup
-> restore still need to be proven on real umbrelOS hardware before this package
-> should be treated as production-ready.
+> **Validation status:** installation is currently blocked by the confirmed
+> PostgreSQL defect above. Static tests and the official Umbrel app linter are
+> part of this repository, but the package must pass a clean umbrelOS install,
+> initialization, upgrade, owner reset, and backup restore before it is ready.
 
 ## Install On Umbrel
+
+**Do not follow these installation steps until a corrected, runtime-tested
+release removes the warning at the top of this document.**
 
 1. In umbrelOS, open **App Store** -> **Community App Stores**.
 2. Add `https://github.com/jlmrt/umbrel-buzz-community-app-store`.

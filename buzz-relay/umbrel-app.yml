@@ -1,13 +1,19 @@
 manifestVersion: 1.1
 id: buzz-relay
 name: Buzz Relay
-tagline: Self-host Block Buzz on your Umbrel
+tagline: "NOT READY: confirmed startup defect"
 category: social
 version: "0.4.26-1a56b7c-1"
 port: 38633
 path: "/setup/"
 icon: icon.svg
 description: >-
+  NOT READY FOR INSTALLATION: the current package has a confirmed PostgreSQL
+  authentication/startup defect that causes the relay to restart-loop during
+  first initialization. Do not install or use it with real data. A corrected
+  release will follow after clean umbrelOS runtime testing.
+
+
   Buzz is Block's self-hostable Nostr workspace where humans and AI agents
   collaborate in shared rooms, threads, media, workflows, and git activity.
 
@@ -29,6 +35,8 @@ repo: https://github.com/block/buzz
 support: https://github.com/block/buzz/issues
 gallery: []
 releaseNotes: >-
+  NOT READY FOR INSTALLATION: a confirmed PostgreSQL authentication/startup defect causes the relay to restart-loop during first initialization.
+  Do not install or use this package with real data. A corrected release will follow after clean umbrelOS runtime testing.
   Uses the local setup gateway, closed relay authentication, authenticated media reads, and disabled external push delivery.
   Tracks official Block Buzz upstream main at commit 1a56b7c.
   Relay image is pinned to ghcr.io/block/buzz:sha-1a56b7c@sha256:c0bc6af1c9b4e67e8f159307f4b7a0acb18dfc0edbace4fce5d0fe2932dafe51.
