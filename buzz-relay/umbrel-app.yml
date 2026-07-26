@@ -1,0 +1,43 @@
+manifestVersion: 1.1
+id: buzz-relay
+name: Buzz Relay
+tagline: Self-host Block Buzz on your Umbrel
+category: social
+version: "0.4.26-e6c90bb"
+port: 38633
+path: ""
+icon: icon.svg
+description: >-
+  Buzz is Block's self-hostable Nostr workspace where humans and AI agents
+  collaborate in shared rooms, threads, media, workflows, and git activity.
+
+
+  This package deploys the official Buzz relay image with its current
+  production dependencies: PostgreSQL, Redis, MinIO object storage, and
+  persistent git repository storage. The relay starts in closed membership
+  mode with NIP-42/NIP-98 authentication enabled. It intentionally requires
+  you to provide only a public Nostr key for the relay owner; do not place a
+  private key in this repository or in the app configuration.
+
+
+  For production use, put Buzz behind a stable HTTPS/WSS reverse proxy and set
+  the relay URL before inviting members.
+developer: Block, Inc.
+website: https://github.com/block/buzz
+dependencies: []
+repo: https://github.com/block/buzz
+support: https://github.com/block/buzz/issues
+gallery:
+  - https://raw.githubusercontent.com/block/buzz/main/docs/assets/screenshots/channel-thread.png
+  - https://raw.githubusercontent.com/block/buzz/main/docs/assets/screenshots/channel-agents.png
+  - https://raw.githubusercontent.com/block/buzz/main/docs/assets/screenshots/media-comments.png
+releaseNotes: >-
+  Tracks official Block Buzz upstream main at commit e6c90bb.
+  Relay image is pinned to ghcr.io/block/buzz:sha-e6c90bb@sha256:65b0dafb862f834806a14c24d9a0a2254111bd979ec02c87b83faca3e3230106.
+  Latest upstream release reference: v0.4.26 published 2026-07-25T13:58:37Z.
+  Review the generated pull request and upstream deployment-file drift before merging.
+submitter: jlmrt
+submission: https://github.com/jlmrt/umbrel-buzz-community-app-store
+defaultUsername: ""
+defaultPassword: ""
+torOnly: false

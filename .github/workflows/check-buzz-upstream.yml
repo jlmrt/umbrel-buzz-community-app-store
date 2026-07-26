@@ -1,0 +1,68 @@
+name: Check Buzz Upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "Upstream target strategy"
+        type: choice
+        required: true
+        default: default-branch
+        options:
+          - default-branch
+          - latest-release
+  schedule:
+    - cron: "27 8 * * 2"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    name: Check official Buzz upstream
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_BUZZ_UPSTREAM_MONITOR == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out package repository
+        uses: actions/checkout@v4
+
+      - name: Select upstream strategy
+        id: strategy
+        env:
+          INPUT_STRATEGY: ${{ github.event.inputs.strategy }}
+          VAR_STRATEGY: ${{ vars.BUZZ_UPSTREAM_STRATEGY }}
+        run: |
+          set -euo pipefail
+          strategy="${INPUT_STRATEGY:-${VAR_STRATEGY:-default-branch}}"
+          echo "strategy=${strategy}" >> "$GITHUB_OUTPUT"
+
+      - name: Check upstream image and deployment files
+        id: upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check_upstream_buzz.py \
+            --strategy "${{ steps.strategy.outputs.strategy }}" \
+            --pr-body .github/upstream-buzz-pr-body.md
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open review pull request
+        if: steps.upstream.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/buzz-upstream
+          delete-branch: true
+          commit-message: Update Buzz upstream package
+          title: Update Buzz upstream package
+          body-path: .github/upstream-buzz-pr-body.md
+          add-paths: |
+            buzz-relay/docker-compose.yml
+            buzz-relay/umbrel-app.yml
+            .github/upstream-buzz.json

@@ -1,0 +1,17 @@
+{
+  "upstream_repo": "block/buzz",
+  "strategy": "default-branch",
+  "target_ref": "main",
+  "target_commit": "e6c90bb7c430d1b2af16508b634f9a5283b7fa3b",
+  "image": "ghcr.io/block/buzz:sha-e6c90bb@sha256:65b0dafb862f834806a14c24d9a0a2254111bd979ec02c87b83faca3e3230106",
+  "latest_release": {
+    "tag_name": "v0.4.26",
+    "published_at": "2026-07-25T13:58:37Z",
+    "html_url": "https://github.com/block/buzz/releases/tag/v0.4.26"
+  },
+  "checked_files": {
+    "deploy/compose/README.md": "10a7f17806cc5023b296fe1ba3bb47262ab42c4b3bdd781ac63ad441a0fb9420",
+    "deploy/compose/.env.example": "c08b18ac65b408f83e8f5d94df439894d382c6b38a6360d1a89d31136cd9acef",
+    "deploy/compose/compose.yml": "d56732343fa5837262c82d4aa0acf0aee190909207b12bc853167b3f9f3da91f"
+  }
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Buzz Relay</title>
+  <desc id="desc">A hexagonal Buzz relay mark with connected nodes.</desc>
+  <rect width="256" height="256" rx="56" fill="#101418"/>
+  <path fill="#f8c84e" d="M128 24 218 76v104l-90 52-90-52V76l90-52Z"/>
+  <path fill="#101418" d="M128 48 197 88v80l-69 40-69-40V88l69-40Z"/>
+  <path fill="#f8c84e" d="M90 95h49c20 0 33 10 33 27 0 10-5 18-14 23 12 5 19 14 19 27 0 20-15 32-39 32H90V95Zm29 26v17h16c7 0 11-3 11-9s-4-8-11-8h-16Zm0 40v18h20c8 0 12-3 12-9s-4-9-12-9h-20Z"/>
+  <circle cx="69" cy="77" r="10" fill="#ffffff"/>
+  <circle cx="187" cy="77" r="10" fill="#ffffff"/>
+  <circle cx="128" cy="219" r="10" fill="#ffffff"/>
+  <path stroke="#ffffff" stroke-width="8" stroke-linecap="round" d="M77 82 111 102M179 82l-34 20M128 208v-29"/>
+</svg>
