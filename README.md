@@ -50,6 +50,11 @@ The relay allows the official Buzz Desktop webview origins so Desktop can read
 the join policy before opening its WebSocket. This does not bypass Nostr
 authentication or membership checks.
 
+After an in-place update, hard-refresh the admin page if an Umbrel webview still
+shows an older form. If the Local Community URL is unavailable, restart Buzz
+Relay from Umbrel and reopen it. A restart preserves configuration and relay
+data; do not uninstall the app or enter internal service addresses.
+
 Buzz uses the URL and `Host` as the community boundary. The admin page locks the
 canonical Community URL after initialization and rejects attempts to change it.
 A different URL is a different Buzz community, not an editable network setting.

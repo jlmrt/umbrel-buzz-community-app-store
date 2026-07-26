@@ -271,6 +271,7 @@ def update_manifest(version: str, target_ref: str, short_sha: str, image: str, l
         "Locks the canonical Community URL after initialization because each URL identifies a distinct Buzz community.",
         "Adds authenticated metadata-only relay health, aggregate usage statistics, storage totals, and a coordinated local backup export.",
         "Restore remains intentionally unavailable until destructive clean-device recovery testing validates credential migration and rollback.",
+        "Keeps local Community URL discovery available when legacy operations metadata has restrictive ownership, and verifies runtime assets inside the setup service.",
         "Allows the official Buzz Desktop webview origins to complete join-policy discovery before the NIP-42 WebSocket flow.",
         "Uses an Umbrel-authenticated admin surface separated from the relay endpoint, closed relay authentication, authenticated media reads, and disabled external push delivery.",
         f"Tracks official Block Buzz upstream {target_ref} at commit {short_sha}.",

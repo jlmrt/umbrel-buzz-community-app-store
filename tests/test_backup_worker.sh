@@ -77,6 +77,17 @@ done
 
 [[ "$(sed -n '1p' "$temporary/config/backup-state")" == completed ]]
 [[ ! -e "$temporary/config/backup-request" ]]
+for marker in \
+  operations-heartbeat \
+  storage-stats \
+  backup-state \
+  backup-progress \
+  backup-message \
+  backup-latest-name \
+  backup-latest-sha256
+do
+  find "$temporary/config/$marker" -perm -004 -print | grep -q .
+done
 archive_name="$(sed -n '1p' "$temporary/config/backup-latest-name")"
 [[ "$archive_name" =~ ^buzz-relay-backup-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.tar$ ]]
 archive="$temporary/backups/$archive_name"

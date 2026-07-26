@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 
 CONFIG_DIR = Path(os.environ.get("BUZZ_CONFIG_DIR", "/config"))
@@ -33,6 +33,7 @@ DEFAULT_RELAY_URL = os.environ.get("BUZZ_DEFAULT_RELAY_URL", "")
 PACKAGE_VERSION = os.environ.get("BUZZ_PACKAGE_VERSION", "unknown")
 BACKUP_DIR = Path(os.environ.get("BUZZ_BACKUP_DIR", "/backups"))
 BACKUP_MAX_BYTES = int(os.environ.get("BUZZ_BACKUP_MAX_BYTES", "53687091200"))
+RUNTIME_VERSION_FILE = STATIC_DIR.parent / "package-version"
 
 OWNER_FILE = CONFIG_DIR / "relay-owner-pubkey"
 PENDING_OWNER_FILE = CONFIG_DIR / "pending-owner-pubkey"
@@ -84,7 +85,7 @@ def read_first_line(path: Path) -> str:
             value = line.strip()
             if value and not value.startswith("#"):
                 return value
-    except FileNotFoundError:
+    except OSError:
         pass
     return ""
 
@@ -343,7 +344,7 @@ def read_storage_stats() -> dict[str, object]:
     measured_at = ""
     try:
         lines = STORAGE_STATS_FILE.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
+    except OSError:
         lines = []
     for line in lines:
         key, separator, value = line.partition("=")
@@ -445,7 +446,7 @@ def latest_backup_path() -> Path | None:
     path = BACKUP_DIR / name
     try:
         metadata = path.lstat()
-    except FileNotFoundError:
+    except OSError:
         return None
     if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
         return None
@@ -459,7 +460,7 @@ def backup_status_payload() -> dict[str, object]:
     if latest_path:
         try:
             latest_size = latest_path.stat().st_size
-        except FileNotFoundError:
+        except OSError:
             latest_path = None
     try:
         progress = max(0, min(100, int(read_first_line(BACKUP_PROGRESS_FILE) or "0")))
@@ -518,10 +519,17 @@ def status_payload() -> dict[str, object]:
     key = current_key()
     relay_url = read_first_line(RELAY_URL_FILE)
     stored_mode = read_first_line(COMMUNITY_MODE_FILE)
+    local_url_error = ""
     try:
-        local_url = validate_relay_url(DEFAULT_RELAY_URL) if DEFAULT_RELAY_URL else ""
-    except InputError:
+        if not DEFAULT_RELAY_URL:
+            raise InputError("The package did not receive a local relay URL from Umbrel.")
+        local_url = validate_relay_url(DEFAULT_RELAY_URL)
+    except InputError as exc:
         local_url = ""
+        local_url_error = (
+            f"Local Community URL discovery failed: {exc} "
+            "Restart Buzz Relay from Umbrel; no technical URL entry is required."
+        )
     if stored_mode not in {"local", "public"}:
         stored_mode = "local" if not relay_url or relay_url == local_url else "public"
     reset_id = read_first_line(RESET_REQUEST_FILE)
@@ -531,9 +539,12 @@ def status_payload() -> dict[str, object]:
     return {
         "configured": key is not None and bool(relay_url),
         "ownerConfigured": key is not None,
+        "packageVersion": PACKAGE_VERSION,
+        "runtimeAssetVersion": read_first_line(RUNTIME_VERSION_FILE),
         "ownerHex": key[0] if key else "",
         "ownerNpub": key[1] if key else "",
         "localCommunityUrl": local_url,
+        "localCommunityUrlError": local_url_error,
         "communityMode": stored_mode,
         "communityUrl": relay_url,
         "relayReady": bool(key) and bool(relay_url) and stats["relayReady"],
@@ -651,7 +662,10 @@ class SetupHandler(BaseHTTPRequestHandler):
 
     def security_headers(self, content_type: str) -> None:
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.send_header("X-Buzz-Package-Version", PACKAGE_VERSION)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -696,10 +710,11 @@ class SetupHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/api/status":
+        request_path = urlsplit(self.path).path
+        if request_path == "/api/status":
             self.send_json(HTTPStatus.OK, status_payload())
             return
-        if self.path == "/api/backups/download":
+        if request_path == "/api/backups/download":
             self.send_backup_archive()
             return
         static_files = {
@@ -708,7 +723,7 @@ class SetupHandler(BaseHTTPRequestHandler):
             "/app.js": "app.js",
             "/styles.css": "styles.css",
         }
-        filename = static_files.get(self.path)
+        filename = static_files.get(request_path)
         if not filename:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -718,6 +733,9 @@ class SetupHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if filename == "index.html":
+            asset_version = quote(PACKAGE_VERSION, safe="").encode("ascii")
+            body = body.replace(b"__BUZZ_ASSET_VERSION__", asset_version)
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
         self.security_headers(f"{content_type}; charset=utf-8")

@@ -11,12 +11,28 @@ services:
     user: "0:0"
     command: >
       sh -euc '
-        mkdir -p /data/config/reset-acks /data/config/backup-acks /data/backups /data/git /data/git-cache /data/postgres /data/redis /data/minio
-        chown -R 1000:1000 /data/config /data/backups /data/git /data/git-cache
-        chmod 700 /data/config
+        mkdir -p /package/data/config/reset-acks /package/data/config/backup-acks /package/data/backups /package/data/git /package/data/git-cache /package/data/postgres /package/data/redis /package/data/minio
+        chown -R 1000:1000 /package/data/config /package/data/backups /package/data/git /package/data/git-cache
+        chmod 700 /package/data/config
+        APP_DATA_DIR=/package APP_VERSION="$${BUZZ_PACKAGE_VERSION}" BUZZ_RUNTIME_IN_PLACE=1 /package/hooks/pre-start
       '
+    environment:
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
     volumes:
-      - ${APP_DATA_DIR}/data:/data
+      - ${APP_DATA_DIR}/data:/package/data
+      - ${APP_DATA_DIR}/runtime:/package/runtime
+      - ${APP_DATA_DIR}/hooks:/package/hooks:ro
+      - ${APP_DATA_DIR}/asset-bin-buzz-admin.sh.b64.template:/package/asset-bin-buzz-admin.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-bin-minio-init-entrypoint.sh.b64.template:/package/asset-bin-minio-init-entrypoint.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-bin-operations-entrypoint.sh.b64.template:/package/asset-bin-operations-entrypoint.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-bin-relay-entrypoint.sh.b64.template:/package/asset-bin-relay-entrypoint.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-bin-resettable-service-entrypoint.sh.b64.template:/package/asset-bin-resettable-service-entrypoint.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-bin-service-urls.sh.b64.template:/package/asset-bin-service-urls.sh.b64:ro
+      - ${APP_DATA_DIR}/asset-config-ui-server.py.b64.template:/package/asset-config-ui-server.py.b64:ro
+      - ${APP_DATA_DIR}/asset-config-ui-static-app.js.b64.template:/package/asset-config-ui-static-app.js.b64:ro
+      - ${APP_DATA_DIR}/asset-config-ui-static-index.html.b64.template:/package/asset-config-ui-static-index.html.b64:ro
+      - ${APP_DATA_DIR}/asset-config-ui-static-styles.css.b64.template:/package/asset-config-ui-static-styles.css.b64:ro
+      - ${APP_DATA_DIR}/asset-sha256.template:/package/asset-sha256:ro
     restart: on-failure
 
   config:
@@ -41,7 +57,7 @@ services:
       BUZZ_MINIO_HEALTH_HOST: buzz-relay-minio
       BUZZ_MINIO_HEALTH_PORT: "9000"
       BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_BUZZ_RELAY_PUBLIC_PORT}
-      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-6"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
       BUZZ_BACKUP_DIR: /backups
       BUZZ_BACKUP_MAX_BYTES: "53687091200"
     volumes:
@@ -66,7 +82,7 @@ services:
       BUZZ_BACKUP_DIR: /backups
       BUZZ_BACKUP_SOURCE_ROOT: /source
       BUZZ_BACKUP_MAX_BYTES: "53687091200"
-      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-6"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
       BUZZ_POSTGRES_HOST: buzz-relay_postgres_1
       POSTGRES_DB: buzz
       POSTGRES_USER: buzz

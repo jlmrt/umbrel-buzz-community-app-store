@@ -41,6 +41,7 @@ write_marker() {
   temporary="${destination}.tmp.$$"
   printf '%s\n' "$value" > "$temporary"
   mv "$temporary" "$destination"
+  chmod 0644 "$destination"
 }
 
 write_state() {
@@ -74,6 +75,7 @@ write_storage_stats() {
     printf 'backups_kib=%s\n' "$(directory_kib "$BACKUP_DIR")"
   } > "$temporary"
   mv "$temporary" "$STORAGE_FILE"
+  chmod 0644 "$STORAGE_FILE"
 }
 
 heartbeat_loop() {

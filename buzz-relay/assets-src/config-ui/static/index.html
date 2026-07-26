@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Buzz Relay Setup</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=__BUZZ_ASSET_VERSION__">
   </head>
   <body>
     <main class="shell">
@@ -125,7 +125,7 @@
           <div class="connection-detail" id="local-detail">
             <span class="detail-label">Community URL</span>
             <code id="local-community-url">Discovering...</code>
-            <p>Use this only from localhost or a trusted local network.</p>
+            <p id="local-discovery-message">Checking the local Umbrel address...</p>
           </div>
 
           <div class="connection-detail hidden" id="public-detail">
@@ -281,8 +281,9 @@
 
       <footer>
         <span>Administration and relay traffic use separate endpoints.</span>
+        <span id="package-version">Package version checking</span>
       </footer>
     </main>
-    <script src="app.js" defer></script>
+    <script src="app.js?v=__BUZZ_ASSET_VERSION__" defer></script>
   </body>
 </html>

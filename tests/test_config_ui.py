@@ -71,6 +71,7 @@ class ConfigurationTests(unittest.TestCase):
             "STORAGE_STATS_FILE": config_dir / "storage-stats",
             "ACTIVITY_COUNT_FILE": config_dir / "activity-observed-count",
             "ACTIVITY_AT_FILE": config_dir / "activity-observed-at",
+            "RUNTIME_VERSION_FILE": config_dir / "runtime-package-version",
         }
         self.originals = {name: getattr(server, name) for name in paths}
         for name, value in paths.items():
@@ -217,6 +218,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_status_reports_failed_start_retry(self) -> None:
         server.apply_configuration(self.payload("12" * 32))
         server.RELAY_STATE_FILE.write_text("retrying-after-exit\n", encoding="utf-8")
+        server.RUNTIME_VERSION_FILE.write_text("runtime-test-version\n", encoding="utf-8")
         stats = {
             "relayReady": False,
             "relayReachable": False,
@@ -229,11 +231,28 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(status["relayState"], "retrying-after-exit")
         self.assertEqual(status["communityMode"], "public")
         self.assertEqual(status["communityUrl"], "wss://buzz.example.com")
+        self.assertEqual(status["localCommunityUrl"], "ws://umbrel.local:38634")
+        self.assertEqual(status["localCommunityUrlError"], "")
+        self.assertEqual(status["runtimeAssetVersion"], "runtime-test-version")
         self.assertNotIn("mediaBaseUrl", status)
         self.assertNotIn("corsOrigins", status)
 
+    def test_status_surfaces_local_community_discovery_failure(self) -> None:
+        server.DEFAULT_RELAY_URL = ""
+        with mock.patch.object(server, "operational_stats", return_value={"relayReady": False}):
+            status = server.status_payload()
+        self.assertEqual(status["localCommunityUrl"], "")
+        self.assertIn("Restart Buzz Relay", status["localCommunityUrlError"])
+
 
 class OperationsTests(unittest.TestCase):
+    def test_permission_errors_make_operations_metadata_unavailable(self) -> None:
+        with mock.patch.object(Path, "read_text", side_effect=PermissionError("denied")):
+            self.assertEqual(server.read_first_line(Path("/protected-marker")), "")
+            storage = server.read_storage_stats()
+        self.assertEqual(storage["dataBytes"], 0)
+        self.assertEqual(storage["components"]["database"], 0)
+
     def test_prometheus_parser_returns_aggregate_numbers_without_labels(self) -> None:
         parsed = server.parse_prometheus_metrics(
             """
@@ -302,6 +321,15 @@ class StaticUiTests(unittest.TestCase):
         self.assertIn("intentionally unavailable", html)
         self.assertIn("communityControls.disabled = locked", app_js)
         self.assertNotIn('type="file"', html)
+
+    def test_local_discovery_failure_and_versioned_assets_are_visible(self) -> None:
+        html = (MODULE_PATH.parent / "static" / "index.html").read_text(encoding="utf-8")
+        app_js = (MODULE_PATH.parent / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("styles.css?v=__BUZZ_ASSET_VERSION__", html)
+        self.assertIn("app.js?v=__BUZZ_ASSET_VERSION__", html)
+        self.assertIn('id="local-discovery-message"', html)
+        self.assertIn("No manual technical URL entry is required", app_js)
+        self.assertIn("Package status unavailable", app_js)
 
     def test_operations_ui_discloses_metadata_and_sensitive_backup(self) -> None:
         html = (MODULE_PATH.parent / "static" / "index.html").read_text(encoding="utf-8")

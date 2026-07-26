@@ -35,7 +35,10 @@ cp buzz-relay/asset-*.template "$runtime_test/"
 for template in "$runtime_test"/*.template; do
   cp "$template" "${template%.template}"
 done
-APP_DATA_DIR="$runtime_test" buzz-relay/hooks/pre-start >/dev/null
+mkdir -p "$runtime_test/runtime/config-ui/static"
+printf 'Client endpoint\n' > "$runtime_test/runtime/config-ui/static/index.html"
+package_version="$(ruby -e 'require "yaml"; print YAML.load_file("buzz-relay/umbrel-app.yml").fetch("version")')"
+APP_DATA_DIR="$runtime_test" APP_VERSION="$package_version" buzz-relay/hooks/pre-start >/dev/null
 cmp buzz-relay/assets-src/bin/buzz-admin.sh "$runtime_test/runtime/bin/buzz-admin.sh"
 cmp buzz-relay/assets-src/bin/minio-init-entrypoint.sh "$runtime_test/runtime/bin/minio-init-entrypoint.sh"
 cmp buzz-relay/assets-src/bin/operations-entrypoint.sh "$runtime_test/runtime/bin/operations-entrypoint.sh"
@@ -46,6 +49,12 @@ cmp buzz-relay/assets-src/config-ui/server.py "$runtime_test/runtime/config-ui/s
 cmp buzz-relay/assets-src/config-ui/static/app.js "$runtime_test/runtime/config-ui/static/app.js"
 cmp buzz-relay/assets-src/config-ui/static/index.html "$runtime_test/runtime/config-ui/static/index.html"
 cmp buzz-relay/assets-src/config-ui/static/styles.css "$runtime_test/runtime/config-ui/static/styles.css"
+[[ "$(sed -n '1p' "$runtime_test/runtime/package-version")" == "$package_version" ]]
+runtime_ui_inode="$(ls -di "$runtime_test/runtime/config-ui" | awk '{print $1}')"
+printf 'Client endpoint\n' > "$runtime_test/runtime/config-ui/static/index.html"
+APP_DATA_DIR="$runtime_test" APP_VERSION="$package_version" BUZZ_RUNTIME_IN_PLACE=1 buzz-relay/hooks/pre-start >/dev/null
+[[ "$(ls -di "$runtime_test/runtime/config-ui" | awk '{print $1}')" == "$runtime_ui_inode" ]]
+cmp buzz-relay/assets-src/config-ui/static/index.html "$runtime_test/runtime/config-ui/static/index.html"
 echo "runtime asset hook ok"
 
 ruby -e '
@@ -55,6 +64,7 @@ ruby -e '
   services = compose.fetch("services")
   proxy = services.fetch("app_proxy").fetch("environment")
   config = services.fetch("config")
+  setup = services.fetch("setup")
   relay = services.fetch("relay")
   operations = services.fetch("operations")
   postgres = services.fetch("postgres")
@@ -62,6 +72,12 @@ ruby -e '
   manifest = YAML.load_file("buzz-relay/umbrel-app.yml")
   abort "app_proxy must target config" unless proxy == {"APP_HOST" => "buzz-relay_config_1", "APP_PORT" => 8080}
   abort "config must not publish a host port" if config.key?("ports")
+  setup_command = setup.fetch("command")
+  abort "setup must verify runtime assets on every container start" unless setup_command.include?("BUZZ_RUNTIME_IN_PLACE=1 /package/hooks/pre-start")
+  abort "setup runtime destination must be writable" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/runtime:/package/runtime")
+  abort "setup data destination must be writable" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/data:/package/data")
+  abort "setup hook must be mounted read-only" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/hooks:/package/hooks:ro")
+  abort "setup checksum source must be mounted read-only" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/asset-sha256.template:/package/asset-sha256:ro")
   abort "operations worker must not publish a host port" if operations.key?("ports")
   abort "shared gateway must not exist" if services.key?("gateway")
   abort "relay public port mapping missing" unless relay.fetch("ports") == ["${APP_BUZZ_RELAY_PUBLIC_PORT}:3000"]
@@ -99,6 +115,7 @@ ruby -e '
   abort "launcher must use the authenticated app-proxy port" unless manifest.fetch("port") == 38633 && manifest.fetch("path") == ""
   abort "generated download archives must be excluded from system backups" unless manifest.fetch("backupIgnore") == ["data/backups/*"]
   abort "package version mismatch in config worker" unless config.fetch("environment").fetch("BUZZ_PACKAGE_VERSION") == manifest.fetch("version")
+  abort "package version mismatch in setup worker" unless setup.fetch("environment").fetch("BUZZ_PACKAGE_VERSION") == manifest.fetch("version")
   abort "package version mismatch in operations worker" unless operations.fetch("environment").fetch("BUZZ_PACKAGE_VERSION") == manifest.fetch("version")
   abort "operations worker must use the pinned PostgreSQL image" unless operations.fetch("image") == postgres.fetch("image")
   abort "operations worker must receive the generated service password" unless operations.fetch("environment").fetch("POSTGRES_PASSWORD") == "${APP_PASSWORD}"
@@ -108,12 +125,15 @@ ruby -e '
     abort "operations source mount must be read-only: #{name}" unless operations.fetch("volumes").include?(mount)
   end
   operations_script = File.read("buzz-relay/assets-src/bin/operations-entrypoint.sh")
+  abort "operations metadata must remain readable by the admin service" unless operations_script.include?(%q{chmod 0644 "$destination"}) && operations_script.include?(%q{chmod 0644 "$STORAGE_FILE"})
   abort "backup must use a logical PostgreSQL dump" unless operations_script.include?("pg_dump") && operations_script.include?("--format=custom")
   abort "backup archive must include component checksums" unless operations_script.include?("SHA256SUMS") && operations_script.include?("sha256sum manifest.json")
   abort "backup must not archive transient Redis or git cache" if operations_script.match?(/tar .*source\/(?:redis|git-cache)/)
   abort "relay backup pause handshake missing" unless File.read("buzz-relay/assets-src/bin/relay-entrypoint.sh").include?("backup-paused")
   abort "MinIO backup pause handshake missing" unless File.read("buzz-relay/assets-src/bin/resettable-service-entrypoint.sh").include?("pause_for_backup")
   server = File.read("buzz-relay/assets-src/config-ui/server.py")
+  abort "status metadata reads must tolerate root-owned legacy files" unless server.include?("except OSError:")
+  abort "static assets must use the package version as a cache key" unless server.include?("__BUZZ_ASSET_VERSION__")
   abort "canonical Community URL must be immutable after initialization" unless server.include?("requiresNewCommunityReset")
   abort "restore upload must not be exposed before runtime validation" if server.include?("restore-upload") || File.read("buzz-relay/assets-src/config-ui/static/index.html").include?(%q{type="file"})
   abort "public port export missing" unless File.read("buzz-relay/exports.sh").include?(%q{APP_BUZZ_RELAY_PUBLIC_PORT="38634"})

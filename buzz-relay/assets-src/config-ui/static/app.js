@@ -13,6 +13,7 @@ const canonicalLock = document.querySelector("#canonical-lock");
 const localDetail = document.querySelector("#local-detail");
 const publicDetail = document.querySelector("#public-detail");
 const localCommunityUrl = document.querySelector("#local-community-url");
+const localDiscoveryMessage = document.querySelector("#local-discovery-message");
 const publicCommunityUrl = document.querySelector("#public-community-url");
 const reviewOwner = document.querySelector("#review-owner");
 const reviewCommunityUrl = document.querySelector("#review-community-url");
@@ -59,6 +60,7 @@ const archiveDetails = document.querySelector("#archive-details");
 const backupCreated = document.querySelector("#backup-created");
 const backupSize = document.querySelector("#backup-size");
 const backupSha = document.querySelector("#backup-sha");
+const packageVersion = document.querySelector("#package-version");
 
 let status = null;
 let preview = null;
@@ -122,6 +124,16 @@ function renderCommunityLock() {
   canonicalLock.classList.toggle("hidden", !locked);
 }
 
+function renderLocalDiscovery() {
+  const localUrl = status?.localCommunityUrl || "";
+  localCommunityUrl.textContent = localUrl || "Local address unavailable";
+  localDetail.dataset.state = localUrl ? "ready" : "error";
+  localDiscoveryMessage.textContent = localUrl
+    ? "Use this only from localhost or a trusted local network."
+    : status?.localCommunityUrlError ||
+      "Restart Buzz Relay from Umbrel. No manual technical URL entry is required.";
+}
+
 function syncReview() {
   reviewOwner.textContent = preview?.ownerNpub || "Not verified";
   reviewCommunityUrl.textContent = selectedCommunityUrl() || "Not selected";
@@ -141,7 +153,7 @@ function hydrateForm() {
   publicCommunityUrl.value = status?.communityMode === "public"
     ? status.communityUrl || ""
     : "";
-  localCommunityUrl.textContent = status?.localCommunityUrl || "Unavailable";
+  renderLocalDiscovery();
   renderMode();
   renderCommunityLock();
   if (ownerInput.value) {
@@ -173,7 +185,11 @@ function renderStatus(nextStatus) {
     setStatus("working", "Relay starting");
   }
 
-  localCommunityUrl.textContent = status.localCommunityUrl || "Unavailable";
+  renderLocalDiscovery();
+  const runtimeVersion = status.runtimeAssetVersion || "";
+  packageVersion.textContent = runtimeVersion && runtimeVersion !== status.packageVersion
+    ? `Package ${status.packageVersion || "unknown"}; runtime assets ${runtimeVersion}`
+    : `Package ${status.packageVersion || runtimeVersion || "unknown"}`;
   const showConfigured = status.configured && !editing;
   configuredView.classList.toggle("hidden", !showConfigured);
   form.classList.toggle("hidden", showConfigured);
@@ -439,7 +455,11 @@ form.addEventListener("submit", async (event) => {
     const communityMode = selectedMode();
     const communityUrl = selectedCommunityUrl();
     if (!communityUrl) {
-      throw new Error("Enter or select a Community URL.");
+      throw new Error(
+        selectedMode() === "local"
+          ? "The local Community URL is unavailable. Restart Buzz Relay from Umbrel and try again."
+          : "Enter a Community URL."
+      );
     }
     const response = await api("api/apply", {
       method: "POST",
@@ -474,6 +494,11 @@ async function refreshStatus() {
     renderStatus(await response.json());
   } catch (_error) {
     setStatus("error", "Setup service unavailable");
+    localCommunityUrl.textContent = "Status unavailable";
+    localDetail.dataset.state = "error";
+    localDiscoveryMessage.textContent =
+      "Restart Buzz Relay from Umbrel. No manual technical URL entry is required.";
+    packageVersion.textContent = "Package status unavailable";
   }
 }
 
