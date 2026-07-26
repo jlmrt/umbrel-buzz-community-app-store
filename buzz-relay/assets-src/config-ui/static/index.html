@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Buzz Relay Setup</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Umbrel configuration</p>
+          <h1>Buzz Relay</h1>
+        </div>
+        <div class="status" id="relay-status" data-state="loading">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="relay-status-text">Checking relay</span>
+        </div>
+      </header>
+
+      <section class="notice" aria-labelledby="local-access-title">
+        <div class="notice-mark" aria-hidden="true">!</div>
+        <div>
+          <h2 id="local-access-title">Local administration page</h2>
+          <p>
+            Keep this page on a trusted local network. Anyone who can reach it may
+            change relay settings or trigger a destructive reset. Never paste an
+            <code>nsec</code> or private key here.
+          </p>
+        </div>
+      </section>
+
+      <form id="setup-form" novalidate>
+        <section class="form-section" aria-labelledby="owner-title">
+          <div class="section-heading">
+            <div>
+              <p class="step">01</p>
+              <h2 id="owner-title">Relay owner</h2>
+            </div>
+            <p>Use an <code>npub</code> or 64-character public-key hex.</p>
+          </div>
+
+          <label for="owner-key">Nostr public key</label>
+          <input
+            id="owner-key"
+            name="ownerKey"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="npub1... or 64-character public-key hex"
+            required
+          >
+          <p class="field-message" id="owner-message" aria-live="polite"></p>
+
+          <div class="equivalents" aria-label="Equivalent public key forms">
+            <div>
+              <span>Hex</span>
+              <output id="owner-hex">Not validated</output>
+            </div>
+            <div>
+              <span>npub</span>
+              <output id="owner-npub">Not validated</output>
+            </div>
+          </div>
+
+          <label class="check-row hidden" id="hex-confirm-row">
+            <input id="confirm-public-hex" type="checkbox">
+            <span>
+              I confirm this raw hex is a public key. Raw 32-byte hex does not
+              reveal whether it came from public or private material.
+            </span>
+          </label>
+        </section>
+
+        <section class="form-section" aria-labelledby="network-title">
+          <div class="section-heading">
+            <div>
+              <p class="step">02</p>
+              <h2 id="network-title">Client endpoint</h2>
+            </div>
+            <p>The relay URL must exactly match the URL configured in clients.</p>
+          </div>
+
+          <div class="field-grid">
+            <div class="field-wide">
+              <label for="relay-url">Relay WebSocket URL</label>
+              <input id="relay-url" name="relayUrl" type="url" placeholder="wss://buzz.example.com" required>
+              <p class="hint">
+                Buzz desktop defaults to <code>ws://localhost:3000</code>. Use
+                <code>ws://</code> only for localhost or trusted local testing;
+                Internet-facing relays require <code>wss://</code>.
+              </p>
+              <p class="hint">
+                This URL is required before first start. Its authority must
+                exactly match the URL clients sign for NIP-42. Changing this
+                URL and using its host can seed or select a different community.
+              </p>
+            </div>
+
+            <div class="field-wide">
+              <label for="media-url">Media base URL</label>
+              <input id="media-url" name="mediaBaseUrl" type="url" placeholder="https://buzz.example.com/media" required>
+              <p class="hint">
+                Media reads require membership authorization. Current official
+                clients support this; older or third-party clients may receive
+                HTTP 401 or 403 responses until updated.
+              </p>
+            </div>
+
+            <div class="field-wide">
+              <label for="cors-origins">Allowed origins</label>
+              <input id="cors-origins" name="corsOrigins" type="text" placeholder="https://buzz.example.com,tauri://localhost" required>
+              <p class="hint">Comma-separated browser or desktop origins. An empty list is rejected.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="reset-panel hidden" id="reset-panel" aria-labelledby="reset-title">
+          <p class="step danger-step">Owner change</p>
+          <h2 id="reset-title">This will erase all Buzz application data</h2>
+          <p>
+            Applying a different owner deletes the database, Redis state, MinIO
+            objects, git repositories and cache, and generated relay identity.
+            This cannot be undone without a backup.
+          </p>
+          <label class="check-row">
+            <input id="confirm-reset" type="checkbox">
+            <span>I have a backup or accept permanent data loss.</span>
+          </label>
+          <label for="reset-phrase">Type <strong>RESET</strong> to continue</label>
+          <input id="reset-phrase" type="text" autocomplete="off" spellcheck="false">
+        </section>
+
+        <div class="form-actions">
+          <div>
+            <p class="action-title" id="action-title">Ready to configure</p>
+            <p class="action-detail" id="action-detail">Only public key material is written to the owner file.</p>
+          </div>
+          <button id="submit-button" type="submit">Save and start relay</button>
+        </div>
+      </form>
+
+      <section class="result hidden" id="result" aria-live="polite"></section>
+
+      <footer>
+        <p>The relay and setup page share this app's Umbrel port.</p>
+        <a href="https://github.com/jlmrt/umbrel-buzz-community-app-store#public-httpswss-with-cloudflare" target="_blank" rel="noreferrer">Deployment guide</a>
+      </footer>
+    </main>
+    <script src="app.js" defer></script>
+  </body>
+</html>

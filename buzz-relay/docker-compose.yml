@@ -3,8 +3,8 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: buzz-relay_relay_1
-      APP_PORT: 3000
+      APP_HOST: buzz-relay_gateway_1
+      APP_PORT: 8080
       PROXY_AUTH_ADD: "false"
 
   setup:
@@ -12,26 +12,74 @@ services:
     user: "0:0"
     command: >
       sh -euc '
-        mkdir -p /data/config /data/git /data/git-cache /data/postgres /data/redis /data/minio
+        mkdir -p /data/config/reset-acks /data/git /data/git-cache /data/postgres /data/redis /data/minio
         chown -R 1000:1000 /data/config /data/git /data/git-cache
         chmod 700 /data/config
       '
     volumes:
       - ${APP_DATA_DIR}/data:/data
-    restart: "no"
+    restart: on-failure
+
+  gateway:
+    image: nginx:alpine3.23@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
+    restart: on-failure
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    volumes:
+      - ${APP_DATA_DIR}/runtime/gateway:/etc/nginx/conf.d:ro
+    tmpfs:
+      - /var/cache/nginx:size=16m,mode=0755
+      - /var/run:size=1m,mode=0755
+      - /tmp:size=8m,mode=1777
+    depends_on:
+      config:
+        condition: service_started
+
+  config:
+    image: python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
+    user: "1000:1000"
+    init: true
+    restart: on-failure
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command: ["python3", "/app/server.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BUZZ_CONFIG_DIR: /config
+      BUZZ_SETUP_STATIC_DIR: /app/static
+      BUZZ_RELAY_HEALTH_HOST: relay
+      BUZZ_RELAY_HEALTH_PORT: "8080"
+      BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_PROXY_PORT}
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config
+      - ${APP_DATA_DIR}/runtime/config-ui:/app:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    depends_on:
+      setup:
+        condition: service_completed_successfully
 
   relay:
-    image: ghcr.io/block/buzz:sha-e6c90bb@sha256:65b0dafb862f834806a14c24d9a0a2254111bd979ec02c87b83faca3e3230106
+    image: ghcr.io/block/buzz:sha-1a56b7c@sha256:c0bc6af1c9b4e67e8f159307f4b7a0acb18dfc0edbace4fce5d0fe2932dafe51
     init: true
     restart: on-failure
     stop_grace_period: 1m
-    entrypoint: ["/usr/local/bin/umbrel-buzz-entrypoint.sh"]
+    entrypoint: ["/opt/umbrel-buzz/relay-entrypoint.sh"]
     volumes:
       - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/data/git:/data/git
       - ${APP_DATA_DIR}/data/git-cache:/data/git-cache
-      - ./scripts/relay-entrypoint.sh:/usr/local/bin/umbrel-buzz-entrypoint.sh:ro
-      - ./scripts/buzz-admin.sh:/usr/local/bin/umbrel-buzz-admin:ro
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     environment:
       BUZZ_BIND_ADDR: 0.0.0.0:3000
       BUZZ_HEALTH_PORT: "8080"
@@ -50,7 +98,8 @@ services:
       BUZZ_REQUIRE_AUTH_TOKEN: "true"
       BUZZ_REQUIRE_RELAY_MEMBERSHIP: "true"
       BUZZ_ALLOW_NIP_OA_AUTH: "true"
-      BUZZ_REQUIRE_MEDIA_GET_AUTH: "false"
+      BUZZ_REQUIRE_MEDIA_GET_AUTH: "true"
+      BUZZ_PUSH_GATEWAY_DELIVERY_URL: ""
       BUZZ_HUDDLE_AUDIO_AVAILABLE: "true"
       BUZZ_MAX_CONNECTIONS: "2000"
       BUZZ_MAX_CONCURRENT_HANDLERS: "256"
@@ -61,9 +110,6 @@ services:
       BUZZ_GIT_MAX_REPOS_PER_PUBKEY: "25"
       BUZZ_GIT_MAX_CONCURRENT_OPS: "4"
       RUST_LOG: buzz_relay=info,buzz_db=info,buzz_auth=info,buzz_pubsub=info,tower_http=info
-      UMBREL_APP_DOMAIN: ${APP_DOMAIN}
-      UMBREL_APP_PORT: ${APP_BUZZ_RELAY_PORT}
-      UMBREL_APP_HIDDEN_SERVICE: ${APP_HIDDEN_SERVICE}
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -73,8 +119,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -88,14 +132,21 @@ services:
 
   postgres:
     image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    user: "0:0"
     restart: on-failure
+    stop_grace_period: 1m
+    entrypoint: ["/opt/umbrel-buzz/resettable-service-entrypoint.sh"]
     environment:
+      BUZZ_CONFIG_DIR: /config
+      BUZZ_RESET_SERVICE: postgres
       POSTGRES_DB: buzz
       POSTGRES_USER: buzz
       POSTGRES_PASSWORD: ${APP_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
+      - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/data/postgres:/var/lib/postgresql/data
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -105,10 +156,18 @@ services:
 
   redis:
     image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    user: "0:0"
     restart: on-failure
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${APP_PASSWORD}"]
+    stop_grace_period: 1m
+    entrypoint: ["/opt/umbrel-buzz/resettable-service-entrypoint.sh"]
+    environment:
+      BUZZ_CONFIG_DIR: /config
+      BUZZ_RESET_SERVICE: redis
+      REDIS_PASSWORD: ${APP_PASSWORD}
     volumes:
+      - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/data/redis:/data
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a '${APP_PASSWORD}' ping | grep -q PONG"]
       interval: 5s
@@ -118,13 +177,19 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    user: "0:0"
     restart: on-failure
-    command: server /data --console-address ":9001"
+    stop_grace_period: 1m
+    entrypoint: ["/opt/umbrel-buzz/resettable-service-entrypoint.sh"]
     environment:
+      BUZZ_CONFIG_DIR: /config
+      BUZZ_RESET_SERVICE: minio
       MINIO_ROOT_USER: buzz
       MINIO_ROOT_PASSWORD: ${APP_PASSWORD}
     volumes:
+      - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/data/minio:/data
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 5s
@@ -134,17 +199,17 @@ services:
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
-    restart: "no"
+    user: "0:0"
+    restart: on-failure
     depends_on:
       minio:
         condition: service_healthy
     environment:
+      BUZZ_CONFIG_DIR: /config
       BUZZ_S3_ACCESS_KEY: buzz
       BUZZ_S3_SECRET_KEY: ${APP_PASSWORD}
       BUZZ_S3_BUCKET: buzz-media
-    entrypoint: >
-      /bin/sh -euc '
-        mc alias set local http://minio:9000 "$${BUZZ_S3_ACCESS_KEY}" "$${BUZZ_S3_SECRET_KEY}"
-        mc mb --ignore-existing "local/$${BUZZ_S3_BUCKET}"
-        mc anonymous set none "local/$${BUZZ_S3_BUCKET}"
-      '
+    entrypoint: ["/opt/umbrel-buzz/minio-init-entrypoint.sh"]
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro

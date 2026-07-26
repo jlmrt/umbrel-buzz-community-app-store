@@ -2,16 +2,20 @@
   "upstream_repo": "block/buzz",
   "strategy": "default-branch",
   "target_ref": "main",
-  "target_commit": "e6c90bb7c430d1b2af16508b634f9a5283b7fa3b",
-  "image": "ghcr.io/block/buzz:sha-e6c90bb@sha256:65b0dafb862f834806a14c24d9a0a2254111bd979ec02c87b83faca3e3230106",
+  "target_commit": "1a56b7cc9e441819328ae6814d15f83ed22388f8",
+  "image": "ghcr.io/block/buzz:sha-1a56b7c@sha256:c0bc6af1c9b4e67e8f159307f4b7a0acb18dfc0edbace4fce5d0fe2932dafe51",
   "latest_release": {
     "tag_name": "v0.4.26",
     "published_at": "2026-07-25T13:58:37Z",
     "html_url": "https://github.com/block/buzz/releases/tag/v0.4.26"
   },
   "checked_files": {
-    "deploy/compose/README.md": "10a7f17806cc5023b296fe1ba3bb47262ab42c4b3bdd781ac63ad441a0fb9420",
     "deploy/compose/.env.example": "c08b18ac65b408f83e8f5d94df439894d382c6b38a6360d1a89d31136cd9acef",
-    "deploy/compose/compose.yml": "d56732343fa5837262c82d4aa0acf0aee190909207b12bc853167b3f9f3da91f"
+    "deploy/compose/Caddyfile": "0f7f2cf467ea6a47450f4afa3cab1540b05e43bee7d12ac3da49295bbd109524",
+    "deploy/compose/README.md": "10a7f17806cc5023b296fe1ba3bb47262ab42c4b3bdd781ac63ad441a0fb9420",
+    "deploy/compose/compose.caddy.yml": "d812927a27a894554b2db78a3690144c2c3d87871e916e0ee2d72dcd22f7831e",
+    "deploy/compose/compose.dev.yml": "ce62868d8c2157006faac238e201cf75e39404bdb84e7d5f461cf6805f191ab5",
+    "deploy/compose/compose.yml": "d56732343fa5837262c82d4aa0acf0aee190909207b12bc853167b3f9f3da91f",
+    "deploy/compose/run.sh": "1bf7dfe59576a03f28df2b9af30003e91d012df2f2c10dcf780a16167bb95f1f"
   }
 }

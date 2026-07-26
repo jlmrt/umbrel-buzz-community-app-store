@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+app_dir="${APP_DATA_DIR:?APP_DATA_DIR is required}"
+stage="${app_dir}/runtime.next.$$"
+previous="${app_dir}/runtime.previous.$$"
+
+cleanup() {
+  rm -rf "$stage" "$previous"
+}
+trap cleanup EXIT
+
+rm -rf "$stage" "$previous"
+mkdir -p "$stage/bin" "$stage/config-ui/static" "$stage/gateway"
+
+decode_asset() {
+  local encoded="$1"
+  local destination="$2"
+  base64 --decode < "${app_dir}/${encoded}" > "${stage}/${destination}"
+}
+
+decode_asset asset-bin-buzz-admin.sh.b64 bin/buzz-admin.sh
+decode_asset asset-bin-minio-init-entrypoint.sh.b64 bin/minio-init-entrypoint.sh
+decode_asset asset-bin-relay-entrypoint.sh.b64 bin/relay-entrypoint.sh
+decode_asset asset-bin-resettable-service-entrypoint.sh.b64 bin/resettable-service-entrypoint.sh
+decode_asset asset-config-ui-server.py.b64 config-ui/server.py
+decode_asset asset-config-ui-static-app.js.b64 config-ui/static/app.js
+decode_asset asset-config-ui-static-index.html.b64 config-ui/static/index.html
+decode_asset asset-config-ui-static-styles.css.b64 config-ui/static/styles.css
+decode_asset asset-gateway-nginx.conf.b64 gateway/nginx.conf
+
+(cd "$stage" && sha256sum --check "${app_dir}/asset-sha256")
+chmod 0755 "$stage"/bin/*.sh
+chmod 0644 "$stage/config-ui/server.py" "$stage"/config-ui/static/* "$stage/gateway/nginx.conf"
+
+if [[ -d "${app_dir}/runtime" ]]; then
+  mv "${app_dir}/runtime" "$previous"
+fi
+mv "$stage" "${app_dir}/runtime"
+rm -rf "$previous"
+trap - EXIT

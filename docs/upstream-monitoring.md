@@ -14,11 +14,16 @@ access.
 - Verifies the matching official GHCR image tag is pullable.
 - Updates the pinned Buzz image tag/digest in `buzz-relay/docker-compose.yml`.
 - Updates the Umbrel app version and release notes.
-- Records hashes for upstream production deployment files under
-  `deploy/compose/`.
+- Enumerates and records hashes for every file under upstream
+  `deploy/compose/`, including newly added files.
 - Opens a pull request for human review.
+- Fails visibly if the expected official image, deployment directory, or core
+  production files are missing.
 
 It does not merge, tag, release, deploy, or publish updates automatically.
+All third-party GitHub Actions are pinned to full commit SHAs. The workflow has
+only `contents: write` and `pull-requests: write` permissions, used to create its
+review branch and pull request.
 
 ## Enable Scheduled Checks
 
@@ -40,6 +45,10 @@ Supported strategies:
 
 You can also run the workflow manually with **Run workflow**.
 
+The scheduled event remains present but its job is skipped unless
+`ENABLE_BUZZ_UPSTREAM_MONITOR` is exactly `true`. Keep it disabled until the
+runtime release gate in the main README has passed.
+
 ## Review Checklist
 
 Before merging any generated PR:
@@ -47,10 +56,15 @@ Before merging any generated PR:
 - Read the upstream Buzz release notes and production `deploy/compose/` changes.
 - Confirm no new required environment variables, services, ports, or volumes
   were added upstream.
+- Confirm every added, removed, or changed `deploy/compose/` file is understood.
+- Confirm the generated package still disables external push delivery and
+  requires authenticated media reads, unless a reviewed compatibility decision
+  explicitly changes those defaults.
 - Test a fresh Umbrel install.
 - Test an upgrade using existing `~/umbrel/app-data/buzz-relay/data/`.
 - Confirm `config/generated.env` was preserved and not regenerated.
 - Confirm the public relay URL still resolves over HTTPS/WSS.
+- Run the generated-asset check and official pinned Umbrel linter.
 
 Do not enable auto-merge for upstream monitor PRs. Buzz is a relay with
 persistent database, object-storage, git, and identity state; updates must be

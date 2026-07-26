@@ -29,11 +29,11 @@ MANIFEST_PATH = ROOT / "buzz-relay" / "umbrel-app.yml"
 LOCK_PATH = ROOT / ".github" / "upstream-buzz.json"
 
 UPSTREAM_REPO = "block/buzz"
-UPSTREAM_FILES = [
+REQUIRED_UPSTREAM_FILES = {
     "deploy/compose/README.md",
     "deploy/compose/.env.example",
     "deploy/compose/compose.yml",
-]
+}
 
 IMAGE_RE = re.compile(
     r"ghcr\.io/block/buzz:sha-[0-9a-f]+@sha256:[0-9a-f]+", re.IGNORECASE
@@ -137,6 +137,27 @@ def fetch_upstream_file(commit: str, path: str) -> str:
         return response.read().decode("utf-8")
 
 
+def list_upstream_deploy_files(commit: str) -> list[str]:
+    entries = github_api(
+        f"/repos/{UPSTREAM_REPO}/contents/deploy/compose?ref={urllib.parse.quote(commit)}"
+    )
+    if not isinstance(entries, list):
+        raise UpstreamUnavailable("Official deploy/compose path is not a directory.")
+    files = sorted(
+        entry["path"]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("type") == "file" and entry.get("path")
+    )
+    missing = sorted(REQUIRED_UPSTREAM_FILES.difference(files))
+    if missing:
+        raise UpstreamUnavailable(
+            "Expected official deployment files are missing: " + ", ".join(missing)
+        )
+    if not files:
+        raise UpstreamUnavailable("No official deploy/compose files were found.")
+    return files
+
+
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -178,12 +199,26 @@ def release_snapshot(release: dict[str, Any] | None) -> dict[str, str] | None:
     }
 
 
-def package_version(latest_release: dict[str, Any] | None, short_sha: str) -> str:
+def package_version(
+    latest_release: dict[str, Any] | None,
+    short_sha: str,
+    current_version: str = "",
+) -> str:
     if latest_release and latest_release.get("tag_name"):
         base = latest_release["tag_name"].removeprefix("v")
     else:
         base = "upstream"
-    return f"{base}-{short_sha}"
+    prefix = f"{base}-{short_sha}-"
+    if current_version.startswith(prefix) and current_version[len(prefix) :].isdigit():
+        return current_version
+    return f"{prefix}1"
+
+
+def current_package_version() -> str:
+    match = re.search(r'(?m)^version: "([^"]+)"$', MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not match:
+        raise RuntimeError(f"Could not read manifest version from {MANIFEST_PATH}")
+    return match.group(1)
 
 
 def update_compose(image: str) -> bool:
@@ -230,6 +265,7 @@ def update_manifest(version: str, target_ref: str, short_sha: str, image: str, l
         release_ref = f"{latest_release.get('tag_name')} published {latest_release.get('published_at')}"
 
     notes = [
+        "Uses the local setup gateway, closed relay authentication, authenticated media reads, and disabled external push delivery.",
         f"Tracks official Block Buzz upstream {target_ref} at commit {short_sha}.",
         f"Relay image is pinned to {image}.",
         f"Latest upstream release reference: {release_ref}.",
@@ -263,7 +299,7 @@ def write_pr_body(
 
     drift_lines = []
     old_hashes = prior_lock.get("checked_files", {}) if prior_lock else {}
-    for file_path in UPSTREAM_FILES:
+    for file_path in sorted(file_hashes):
         old_hash = old_hashes.get(file_path, "")
         new_hash = file_hashes[file_path]
         if old_hash and old_hash != new_hash:
@@ -313,23 +349,21 @@ def main() -> int:
     image_tag = f"sha-{short_sha}"
     digest = ghcr_digest("block/buzz", image_tag)
     if not digest:
-        print(
-            f"No public GHCR image found for ghcr.io/block/buzz:{image_tag}; "
-            "leaving package unchanged.",
-            file=sys.stderr,
+        raise UpstreamUnavailable(
+            f"Expected public image ghcr.io/block/buzz:{image_tag} is missing."
         )
-        return 0
 
     image = f"ghcr.io/block/buzz:{image_tag}@{digest}"
+    upstream_files = list_upstream_deploy_files(target_commit)
     file_hashes = {
         path: sha256_text(fetch_upstream_file(target_commit, path))
-        for path in UPSTREAM_FILES
+        for path in upstream_files
     }
     prior_lock = read_lock()
 
     update_compose(image)
     update_manifest(
-        package_version(latest_release, short_sha),
+        package_version(latest_release, short_sha, current_package_version()),
         target_ref,
         short_sha,
         image,
@@ -358,4 +392,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except UpstreamUnavailable as exc:
         print(f"Upstream unavailable: {exc}", file=sys.stderr)
-        raise SystemExit(0)
+        raise SystemExit(1)

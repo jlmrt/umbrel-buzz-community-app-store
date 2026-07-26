@@ -1,0 +1,26 @@
+name: Validate Umbrel Package
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Static checks and official Umbrel linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out package repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run repository validation
+        run: ./scripts/validate.sh
+
+      - name: Run pinned official Umbrel app linter
+        run: ./scripts/run-umbrel-lint.sh

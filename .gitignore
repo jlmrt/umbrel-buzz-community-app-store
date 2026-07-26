@@ -2,3 +2,18 @@ work/
 .DS_Store
 outputs/
 .github/upstream-buzz-pr-body.md
+
+# Runtime state and credentials must never be committed.
+.env
+*.pem
+*.key
+*nsec*
+__pycache__/
+*.py[cod]
+.pytest_cache/
+buzz-relay/data/**
+buzz-relay/runtime/**
+!buzz-relay/data/**/
+!buzz-relay/data/**/.gitkeep
+!buzz-relay/runtime/**/
+!buzz-relay/runtime/**/.gitkeep
