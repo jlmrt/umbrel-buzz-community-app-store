@@ -9,8 +9,6 @@ RUNTIME_FILE="${CONFIG_DIR}/runtime.env"
 OWNER_FILE="${CONFIG_DIR}/relay-owner-pubkey"
 PENDING_OWNER_FILE="${CONFIG_DIR}/pending-owner-pubkey"
 RELAY_URL_FILE="${CONFIG_DIR}/relay-url"
-MEDIA_BASE_URL_FILE="${CONFIG_DIR}/media-base-url"
-CORS_ORIGINS_FILE="${CONFIG_DIR}/cors-origins"
 RESET_REQUEST_FILE="${CONFIG_DIR}/reset-request"
 RESET_COMPLETED_FILE="${CONFIG_DIR}/reset-completed"
 RESET_ERROR_FILE="${CONFIG_DIR}/reset-error"
@@ -77,12 +75,12 @@ derive_media_base_url() {
   esac
 }
 
-derive_cors_origin() {
+derive_cors_origins() {
   local relay_url="$1"
   case "$relay_url" in
-    wss://*) printf 'https://%s\n' "${relay_url#wss://}" ;;
-    ws://*) printf 'http://%s\n' "${relay_url#ws://}" ;;
-    *) printf 'http://localhost:3000\n' ;;
+    wss://*) printf 'https://%s,tauri://localhost,http://tauri.localhost\n' "${relay_url#wss://}" ;;
+    ws://*) printf 'http://%s,tauri://localhost,http://tauri.localhost\n' "${relay_url#ws://}" ;;
+    *) printf 'http://localhost:3000,tauri://localhost,http://tauri.localhost\n' ;;
   esac
 }
 
@@ -104,10 +102,8 @@ write_runtime() {
   local relay_url="$2"
   local media_base_url cors_origins
 
-  media_base_url="${BUZZ_MEDIA_BASE_URL:-$(first_line "$MEDIA_BASE_URL_FILE")}"
-  media_base_url="${media_base_url:-$(derive_media_base_url "$relay_url")}"
-  cors_origins="${BUZZ_CORS_ORIGINS:-$(first_line "$CORS_ORIGINS_FILE")}"
-  cors_origins="${cors_origins:-$(derive_cors_origin "$relay_url")}"
+  media_base_url="${BUZZ_MEDIA_BASE_URL:-$(derive_media_base_url "$relay_url")}"
+  cors_origins="${BUZZ_CORS_ORIGINS:-$(derive_cors_origins "$relay_url")}"
 
   {
     write_shell_var RELAY_URL "$relay_url"

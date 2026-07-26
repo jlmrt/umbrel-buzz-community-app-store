@@ -1,13 +1,19 @@
 const form = document.querySelector("#setup-form");
+const configuredView = document.querySelector("#configured-view");
 const ownerInput = document.querySelector("#owner-key");
 const ownerMessage = document.querySelector("#owner-message");
+const verifiedKey = document.querySelector("#verified-key");
 const ownerHex = document.querySelector("#owner-hex");
 const ownerNpub = document.querySelector("#owner-npub");
 const hexConfirmRow = document.querySelector("#hex-confirm-row");
 const confirmPublicHex = document.querySelector("#confirm-public-hex");
-const relayUrl = document.querySelector("#relay-url");
-const mediaUrl = document.querySelector("#media-url");
-const corsOrigins = document.querySelector("#cors-origins");
+const modeInputs = [...document.querySelectorAll('input[name="communityMode"]')];
+const localDetail = document.querySelector("#local-detail");
+const publicDetail = document.querySelector("#public-detail");
+const localCommunityUrl = document.querySelector("#local-community-url");
+const publicCommunityUrl = document.querySelector("#public-community-url");
+const reviewOwner = document.querySelector("#review-owner");
+const reviewCommunityUrl = document.querySelector("#review-community-url");
 const resetPanel = document.querySelector("#reset-panel");
 const confirmReset = document.querySelector("#confirm-reset");
 const resetPhrase = document.querySelector("#reset-phrase");
@@ -17,11 +23,17 @@ const actionDetail = document.querySelector("#action-detail");
 const result = document.querySelector("#result");
 const statusBadge = document.querySelector("#relay-status");
 const statusText = document.querySelector("#relay-status-text");
+const configuredCommunityUrl = document.querySelector("#configured-community-url");
+const configuredOwner = document.querySelector("#configured-owner");
+const configuredMode = document.querySelector("#configured-mode");
+const editButton = document.querySelector("#edit-button");
+const copyCommunityUrl = document.querySelector("#copy-community-url");
 
 let status = null;
 let preview = null;
 let previewTimer = null;
 let formTouched = false;
+let editing = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -46,6 +58,57 @@ function setStatus(state, text) {
   statusText.textContent = text;
 }
 
+function selectedMode() {
+  return modeInputs.find((input) => input.checked)?.value || "local";
+}
+
+function selectedCommunityUrl() {
+  return selectedMode() === "local"
+    ? status?.localCommunityUrl || ""
+    : publicCommunityUrl.value.trim();
+}
+
+function setSelectedMode(mode) {
+  const selected = modeInputs.find((input) => input.value === mode) || modeInputs[0];
+  selected.checked = true;
+}
+
+function renderMode() {
+  const local = selectedMode() === "local";
+  localDetail.classList.toggle("hidden", !local);
+  publicDetail.classList.toggle("hidden", local);
+  publicCommunityUrl.required = !local;
+  syncReview();
+}
+
+function syncReview() {
+  reviewOwner.textContent = preview?.ownerNpub || "Not verified";
+  reviewCommunityUrl.textContent = selectedCommunityUrl() || "Not selected";
+}
+
+function populateConfiguredView() {
+  configuredCommunityUrl.textContent = status?.communityUrl || "Unavailable";
+  configuredOwner.textContent = status?.ownerNpub || "Unavailable";
+  configuredMode.textContent = status?.communityMode === "public"
+    ? "Public community"
+    : "Local testing";
+}
+
+function hydrateForm() {
+  ownerInput.value = status?.ownerNpub || "";
+  setSelectedMode(status?.communityMode || "local");
+  publicCommunityUrl.value = status?.communityMode === "public"
+    ? status.communityUrl || ""
+    : "";
+  localCommunityUrl.textContent = status?.localCommunityUrl || "Unavailable";
+  renderMode();
+  if (ownerInput.value) {
+    void previewOwnerKey();
+  } else {
+    clearPreview();
+  }
+}
+
 function renderStatus(nextStatus) {
   status = nextStatus;
   if (status.resetting) {
@@ -66,43 +129,16 @@ function renderStatus(nextStatus) {
     setStatus("working", "Relay starting");
   }
 
-  if (!formTouched) {
-    ownerInput.value = status.ownerNpub || "";
-    relayUrl.value = status.relayUrl || defaultRelayUrl();
-    mediaUrl.value = status.mediaBaseUrl || deriveMediaUrl(relayUrl.value);
-    corsOrigins.value = status.corsOrigins || deriveOrigin(relayUrl.value);
-    if (ownerInput.value) {
-      previewOwnerKey();
-    }
+  localCommunityUrl.textContent = status.localCommunityUrl || "Unavailable";
+  const showConfigured = status.configured && !editing;
+  configuredView.classList.toggle("hidden", !showConfigured);
+  form.classList.toggle("hidden", showConfigured);
+  if (showConfigured) {
+    populateConfiguredView();
+  } else if (!formTouched) {
+    hydrateForm();
   }
   updateOwnerChangeState();
-}
-
-function defaultRelayUrl() {
-  return status?.defaultRelayUrl || "";
-}
-
-function deriveMediaUrl(value) {
-  try {
-    const url = new URL(value);
-    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
-    url.pathname = "/media";
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/, "");
-  } catch (_error) {
-    return "";
-  }
-}
-
-function deriveOrigin(value) {
-  try {
-    const url = new URL(value);
-    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
-    return `${url.protocol}//${url.host}`;
-  } catch (_error) {
-    return "";
-  }
 }
 
 function showResult(kind, message) {
@@ -110,14 +146,21 @@ function showResult(kind, message) {
   result.textContent = message;
 }
 
+function hideResult() {
+  result.className = "result hidden";
+  result.textContent = "";
+}
+
 function clearPreview(message = "") {
   preview = null;
-  ownerHex.textContent = "Not validated";
-  ownerNpub.textContent = "Not validated";
+  verifiedKey.classList.add("hidden");
+  ownerHex.textContent = "";
+  ownerNpub.textContent = "";
   ownerMessage.textContent = message;
   ownerMessage.dataset.kind = message ? "error" : "";
   hexConfirmRow.classList.add("hidden");
   confirmPublicHex.checked = false;
+  syncReview();
   updateOwnerChangeState();
 }
 
@@ -142,12 +185,14 @@ async function previewOwnerKey() {
     preview = response;
     ownerHex.textContent = preview.ownerHex;
     ownerNpub.textContent = preview.ownerNpub;
-    ownerMessage.textContent = "Valid public-key format.";
+    ownerMessage.textContent = "Owner public key verified.";
     ownerMessage.dataset.kind = "success";
+    verifiedKey.classList.remove("hidden");
     hexConfirmRow.classList.toggle("hidden", !preview.rawHex);
   } catch (error) {
     clearPreview(error.message);
   }
+  syncReview();
   updateOwnerChangeState();
 }
 
@@ -157,80 +202,107 @@ function updateOwnerChangeState() {
   );
   resetPanel.classList.toggle("hidden", !ownerChanged);
   if (ownerChanged) {
-    submitButton.textContent = "Reset data and apply owner";
+    submitButton.textContent = "Reset data and change owner";
     submitButton.classList.add("danger-button");
     actionTitle.textContent = "Destructive owner change";
-    actionDetail.textContent = "All application data and generated relay identity will be reset.";
+    actionDetail.textContent = "A full application data reset is required.";
   } else if (status?.ownerConfigured) {
-    submitButton.textContent = "Apply settings";
+    submitButton.textContent = "Save configuration";
     submitButton.classList.remove("danger-button");
-    actionTitle.textContent = "Relay configured";
-    actionDetail.textContent = "Network-setting changes restart the relay without deleting data.";
+    actionTitle.textContent = "Review changes";
+    actionDetail.textContent = "Changing the Community URL restarts the relay.";
   } else {
     submitButton.textContent = "Save and start relay";
     submitButton.classList.remove("danger-button");
     actionTitle.textContent = "Ready to configure";
-    actionDetail.textContent = "Only public key material is written to the owner file.";
+    actionDetail.textContent = "Only the verified public key is saved.";
   }
 }
 
 ownerInput.addEventListener("input", () => {
   formTouched = true;
   preview = null;
+  verifiedKey.classList.add("hidden");
   confirmPublicHex.checked = false;
   hexConfirmRow.classList.add("hidden");
-  ownerMessage.textContent = "Validating public-key format...";
+  ownerMessage.textContent = "Verifying public key...";
   ownerMessage.dataset.kind = "";
+  syncReview();
   updateOwnerChangeState();
   window.clearTimeout(previewTimer);
   previewTimer = window.setTimeout(previewOwnerKey, 250);
 });
 
-relayUrl.addEventListener("input", () => {
+modeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    formTouched = true;
+    renderMode();
+  });
+});
+
+publicCommunityUrl.addEventListener("input", () => {
   formTouched = true;
+  syncReview();
 });
 
-relayUrl.addEventListener("change", () => {
-  if (!mediaUrl.value || mediaUrl.value === status?.mediaBaseUrl) {
-    mediaUrl.value = deriveMediaUrl(relayUrl.value);
-  }
-  if (!corsOrigins.value || corsOrigins.value === status?.corsOrigins) {
-    corsOrigins.value = deriveOrigin(relayUrl.value);
-  }
-});
-
-[mediaUrl, corsOrigins, confirmPublicHex, confirmReset, resetPhrase].forEach((element) => {
+[confirmPublicHex, confirmReset, resetPhrase].forEach((element) => {
   element.addEventListener("input", () => {
     formTouched = true;
   });
 });
 
+editButton.addEventListener("click", () => {
+  editing = true;
+  formTouched = false;
+  hideResult();
+  renderStatus(status);
+  ownerInput.focus();
+});
+
+copyCommunityUrl.addEventListener("click", async () => {
+  const value = status?.communityUrl || "";
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    copyCommunityUrl.textContent = "Copied";
+    window.setTimeout(() => {
+      copyCommunityUrl.textContent = "Copy community URL";
+    }, 1600);
+  } catch (_error) {
+    showResult("error", "Copy failed. Select and copy the Community URL manually.");
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  showResult("working", "Validating and applying configuration...");
+  showResult("working", "Saving configuration...");
   submitButton.disabled = true;
   try {
     await previewOwnerKey();
     if (!preview) {
       throw new Error(ownerMessage.textContent || "Enter a valid public key.");
     }
-    const payload = {
-      ownerKey: ownerInput.value,
-      confirmPublicHex: confirmPublicHex.checked,
-      relayUrl: relayUrl.value,
-      mediaBaseUrl: mediaUrl.value,
-      corsOrigins: corsOrigins.value,
-      confirmReset: confirmReset.checked,
-      resetPhrase: resetPhrase.value,
-    };
+    const communityMode = selectedMode();
+    const communityUrl = selectedCommunityUrl();
+    if (!communityUrl) {
+      throw new Error("Enter or select a Community URL.");
+    }
     const response = await api("api/apply", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ownerKey: ownerInput.value,
+        confirmPublicHex: confirmPublicHex.checked,
+        communityMode,
+        communityUrl: communityMode === "public" ? communityUrl : "",
+        confirmReset: confirmReset.checked,
+        resetPhrase: resetPhrase.value,
+      }),
     });
     showResult("success", response.message);
     resetPhrase.value = "";
     confirmReset.checked = false;
     formTouched = false;
+    editing = false;
     await refreshStatus();
   } catch (error) {
     showResult("error", error.message);

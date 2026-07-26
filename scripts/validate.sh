@@ -62,6 +62,12 @@ ruby -e '
   relay_env = relay.fetch("environment")
   abort "raw database URL must be built by the credential-safe wrapper" if relay_env.key?("DATABASE_URL") || relay_env.key?("REDIS_URL")
   abort "relay service password input missing" unless relay_env.key?("BUZZ_SERVICE_PASSWORD")
+  abort "production NIP-98 authentication must remain enabled" unless relay_env.fetch("BUZZ_REQUIRE_AUTH_TOKEN") == "true"
+  abort "closed relay membership must remain enabled" unless relay_env.fetch("BUZZ_REQUIRE_RELAY_MEMBERSHIP") == "true"
+  abort "NIP-OA owner delegation must remain enabled" unless relay_env.fetch("BUZZ_ALLOW_NIP_OA_AUTH") == "true"
+  entrypoint = File.read("buzz-relay/assets-src/bin/relay-entrypoint.sh")
+  abort "Buzz Desktop policy-probe origins missing" unless entrypoint.include?("tauri://localhost") && entrypoint.include?("http://tauri.localhost")
+  abort "runtime must derive CORS instead of trusting stale persisted values" if entrypoint.include?(%q{first_line "$CORS_ORIGINS_FILE"})
   abort "relay database host is not collision-safe" unless relay_env.fetch("BUZZ_POSTGRES_HOST") == "buzz-relay_postgres_1"
   abort "relay Redis host is not collision-safe" unless relay_env.fetch("BUZZ_REDIS_HOST") == "buzz-relay_redis_1"
   minio_aliases = services.fetch("minio").dig("networks", "default", "aliases") || []

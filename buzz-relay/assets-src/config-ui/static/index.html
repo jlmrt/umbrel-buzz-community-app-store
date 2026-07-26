@@ -19,34 +19,60 @@
         </div>
       </header>
 
-      <section class="notice" aria-labelledby="local-access-title">
-        <div class="notice-mark" aria-hidden="true">!</div>
+      <section class="notice" aria-labelledby="security-title">
+        <span class="notice-mark" aria-hidden="true">!</span>
         <div>
-          <h2 id="local-access-title">Umbrel-authenticated administration</h2>
+          <h2 id="security-title">Public keys only</h2>
           <p>
-            This admin surface is protected by Umbrel sign-in and is separate
-            from the relay endpoint. Keep the Umbrel admin port private. Never
-            paste an <code>nsec</code> or private key here.
+            This page is protected by Umbrel sign-in. Never paste an
+            <code>nsec</code> or private key. The public relay uses a separate
+            endpoint.
           </p>
         </div>
+      </section>
+
+      <section class="completion hidden" id="configured-view" aria-labelledby="configured-title">
+        <p class="eyebrow">Configuration saved</p>
+        <h2 id="configured-title">Add this community in Buzz Desktop</h2>
+        <p class="completion-copy">
+          Choose <strong>Add a community</strong>, then
+          <strong>Join an existing community</strong>. Paste this value into
+          <strong>Community URL or invite link</strong> and select
+          <strong>Join community</strong>.
+        </p>
+        <div class="copy-field">
+          <code id="configured-community-url"></code>
+          <button id="copy-community-url" type="button">Copy community URL</button>
+        </div>
+        <dl class="summary-list">
+          <div>
+            <dt>Owner identity</dt>
+            <dd id="configured-owner"></dd>
+          </div>
+          <div>
+            <dt>Connection</dt>
+            <dd id="configured-mode"></dd>
+          </div>
+        </dl>
+        <p class="identity-note">
+          Buzz Desktop must be using the Nostr identity shown above. No API
+          token is needed for the owner.
+        </p>
+        <button class="secondary-button" id="edit-button" type="button">Edit configuration</button>
       </section>
 
       <form id="setup-form" novalidate>
         <section class="form-section" aria-labelledby="owner-title">
           <div class="section-heading">
-            <div>
-              <p class="step">01</p>
-              <h2 id="owner-title">Relay owner</h2>
-            </div>
-            <p>Use an <code>npub</code> or 64-character public-key hex.</p>
+            <p class="step">Step 1</p>
+            <h2 id="owner-title">Verify the owner identity</h2>
           </div>
 
-          <label for="owner-key">Nostr public key</label>
+          <label for="owner-key">Owner public key</label>
           <input
             id="owner-key"
             name="ownerKey"
             type="text"
-            inputmode="text"
             autocomplete="off"
             autocapitalize="none"
             spellcheck="false"
@@ -55,76 +81,85 @@
           >
           <p class="field-message" id="owner-message" aria-live="polite"></p>
 
-          <div class="equivalents" aria-label="Equivalent public key forms">
-            <div>
-              <span>Hex</span>
-              <output id="owner-hex">Not validated</output>
-            </div>
-            <div>
-              <span>npub</span>
-              <output id="owner-npub">Not validated</output>
-            </div>
+          <div class="verified-key hidden" id="verified-key">
+            <strong>Verified public key</strong>
+            <span id="owner-npub"></span>
+            <span class="key-hex" id="owner-hex"></span>
           </div>
 
           <label class="check-row hidden" id="hex-confirm-row">
             <input id="confirm-public-hex" type="checkbox">
-            <span>
-              I confirm this raw hex is a public key. Raw 32-byte hex does not
-              reveal whether it came from public or private material.
-            </span>
+            <span>I confirm this 64-character hex value is a public key.</span>
           </label>
         </section>
 
-        <section class="form-section" aria-labelledby="network-title">
+        <section class="form-section" aria-labelledby="community-title">
           <div class="section-heading">
+            <p class="step">Step 2</p>
+            <h2 id="community-title">Choose how you will connect</h2>
+          </div>
+
+          <fieldset class="mode-options">
+            <legend class="visually-hidden">Community connection</legend>
+            <label class="mode-option">
+              <input name="communityMode" type="radio" value="local" checked>
+              <span>
+                <strong>Local testing</strong>
+                <small>Use the relay discovered on this Umbrel.</small>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input name="communityMode" type="radio" value="public">
+              <span>
+                <strong>Public community</strong>
+                <small>Use your final public WSS address.</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="connection-detail" id="local-detail">
+            <span class="detail-label">Community URL</span>
+            <code id="local-community-url">Discovering...</code>
+            <p>Use this only from localhost or a trusted local network.</p>
+          </div>
+
+          <div class="connection-detail hidden" id="public-detail">
+            <label for="public-community-url">Community URL</label>
+            <input
+              id="public-community-url"
+              type="url"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              placeholder="wss://community.example.com"
+            >
+            <p>Enter the final address after TLS and WebSocket forwarding are working.</p>
+          </div>
+        </section>
+
+        <section class="form-section review-section" aria-labelledby="review-title">
+          <div class="section-heading">
+            <p class="step">Step 3</p>
+            <h2 id="review-title">Review and start</h2>
+          </div>
+          <dl class="summary-list">
             <div>
-              <p class="step">02</p>
-              <h2 id="network-title">Client endpoint</h2>
+              <dt>Owner</dt>
+              <dd id="review-owner">Not verified</dd>
             </div>
-            <p>The relay URL must exactly match the URL configured in clients.</p>
-          </div>
-
-          <div class="field-grid">
-            <div class="field-wide">
-              <label for="relay-url">Relay WebSocket URL</label>
-              <input id="relay-url" name="relayUrl" type="url" placeholder="wss://buzz.example.com" required>
-              <p class="hint">
-                Buzz desktop defaults to <code>ws://localhost:3000</code>. Use
-                <code>ws://</code> only for localhost or trusted local testing;
-                Internet-facing relays require <code>wss://</code>.
-              </p>
-              <p class="hint">
-                This URL is required before first start. Its authority must
-                exactly match the URL clients sign for NIP-42. Changing this
-                URL and using its host can seed or select a different community.
-              </p>
+            <div>
+              <dt>Community URL</dt>
+              <dd id="review-community-url">Not selected</dd>
             </div>
-
-            <div class="field-wide">
-              <label for="media-url">Media base URL</label>
-              <input id="media-url" name="mediaBaseUrl" type="url" placeholder="https://buzz.example.com/media" required>
-              <p class="hint">
-                Media reads require membership authorization. Current official
-                clients support this; older or third-party clients may receive
-                HTTP 401 or 403 responses until updated.
-              </p>
-            </div>
-
-            <div class="field-wide">
-              <label for="cors-origins">Allowed origins</label>
-              <input id="cors-origins" name="corsOrigins" type="text" placeholder="https://buzz.example.com,tauri://localhost" required>
-              <p class="hint">Comma-separated browser or desktop origins. An empty list is rejected.</p>
-            </div>
-          </div>
+          </dl>
         </section>
 
         <section class="reset-panel hidden" id="reset-panel" aria-labelledby="reset-title">
           <p class="step danger-step">Owner change</p>
-          <h2 id="reset-title">This will erase all Buzz application data</h2>
+          <h2 id="reset-title">Changing the owner erases all Buzz application data</h2>
           <p>
-            Applying a different owner deletes the database, Redis state, MinIO
-            objects, git repositories and cache, and generated relay identity.
-            This cannot be undone without a backup.
+            The database, object storage, repositories, cache, and generated
+            relay identity will be reset. This cannot be undone without a backup.
           </p>
           <label class="check-row">
             <input id="confirm-reset" type="checkbox">
@@ -137,7 +172,7 @@
         <div class="form-actions">
           <div>
             <p class="action-title" id="action-title">Ready to configure</p>
-            <p class="action-detail" id="action-detail">Only public key material is written to the owner file.</p>
+            <p class="action-detail" id="action-detail">Only the verified public key is saved.</p>
           </div>
           <button id="submit-button" type="submit">Save and start relay</button>
         </div>
@@ -146,8 +181,7 @@
       <section class="result hidden" id="result" aria-live="polite"></section>
 
       <footer>
-        <p>Administration and relay traffic use separate ports.</p>
-        <a href="https://github.com/jlmrt/umbrel-buzz-community-app-store#endpoints-and-public-access" target="_blank" rel="noreferrer">Endpoint notes</a>
+        <span>Administration and relay traffic use separate endpoints.</span>
       </footer>
     </main>
     <script src="app.js" defer></script>

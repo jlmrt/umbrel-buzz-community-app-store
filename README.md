@@ -18,17 +18,15 @@ runtime-tested release.
 1. In umbrelOS, open **App Store** -> **Community App Stores**.
 2. Add `https://github.com/jlmrt/umbrel-buzz-community-app-store`.
 3. Install **Buzz Relay** and open it from the Umbrel launcher.
-4. Sign in through Umbrel, then enter the owner public key and client endpoint
-   settings.
+4. Sign in through Umbrel and complete the guided setup.
 
 ## Configure
 
-The admin page requires:
-
-- the relay owner's `npub` or 64-character hexadecimal public key
-- the canonical `ws://` or `wss://` relay URL clients will use
-- the matching HTTP(S) media URL
-- the browser and desktop origins allowed to connect
+Enter the relay owner's `npub` or 64-character hexadecimal public key, then
+choose **Local testing** or **Public community**. Local testing uses the
+Community URL discovered from Umbrel. Public community asks only for the final
+root `wss://` address after the operator has configured TLS and WebSocket
+forwarding. Media and allowed-origin values are derived automatically.
 
 The page rejects `nsec` values. Never paste a Nostr private key into the app,
 repository, logs, or support messages. Raw 64-character hex is ambiguous, so
@@ -38,6 +36,17 @@ The relay does not initialize until a valid public owner key and an explicit
 canonical URL are saved. The canonical URL must exactly match the client-facing
 URL, including scheme, host, and non-default port, because it participates in
 NIP-42 authentication. The request `Host` must also be preserved.
+
+After saving, the admin page displays the exact Community URL. In Buzz Desktop,
+choose **Add a community** -> **Join an existing community**, paste it into
+**Community URL or invite link**, and select **Join community**. Buzz Desktop
+must be using the configured owner identity. Its optional **Use an API token**
+control is not needed: this package uses signed NIP-42/NIP-98 authentication and
+keeps closed relay membership enforcement enabled.
+
+The relay allows the official Buzz Desktop webview origins so Desktop can read
+the join policy before opening its WebSocket. This does not bypass Nostr
+authentication or membership checks.
 
 Changing the owner requires typing `RESET` and confirming a full reset. It
 deletes PostgreSQL, Redis, MinIO, git data and cache, and the generated relay

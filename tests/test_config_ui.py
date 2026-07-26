@@ -48,6 +48,7 @@ class ConfigurationTests(unittest.TestCase):
             "RELAY_URL_FILE": config_dir / "relay-url",
             "MEDIA_URL_FILE": config_dir / "media-base-url",
             "CORS_FILE": config_dir / "cors-origins",
+            "COMMUNITY_MODE_FILE": config_dir / "community-mode",
             "RESET_REQUEST_FILE": config_dir / "reset-request",
             "RESET_COMPLETED_FILE": config_dir / "reset-completed",
             "RESET_ERROR_FILE": config_dir / "reset-error",
@@ -58,10 +59,13 @@ class ConfigurationTests(unittest.TestCase):
         self.originals = {name: getattr(server, name) for name in paths}
         for name, value in paths.items():
             setattr(server, name, value)
+        self.original_default_relay_url = server.DEFAULT_RELAY_URL
+        server.DEFAULT_RELAY_URL = "ws://umbrel.local:38634"
 
     def tearDown(self) -> None:
         for name, value in self.originals.items():
             setattr(server, name, value)
+        server.DEFAULT_RELAY_URL = self.original_default_relay_url
         self.temporary.cleanup()
 
     @staticmethod
@@ -69,9 +73,8 @@ class ConfigurationTests(unittest.TestCase):
         return {
             "ownerKey": owner_key,
             "confirmPublicHex": True,
-            "relayUrl": "wss://buzz.example.com",
-            "mediaBaseUrl": "https://buzz.example.com/media",
-            "corsOrigins": "https://buzz.example.com,tauri://localhost",
+            "communityMode": "public",
+            "communityUrl": "wss://buzz.example.com",
             "confirmReset": False,
             "resetPhrase": "",
         }
@@ -87,7 +90,50 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(status, 202)
         self.assertEqual(server.OWNER_FILE.read_text().strip(), "ab" * 32)
         self.assertNotIn("nsec", server.OWNER_FILE.read_text())
+        self.assertEqual(server.RELAY_URL_FILE.read_text().strip(), "wss://buzz.example.com")
+        self.assertEqual(server.MEDIA_URL_FILE.read_text().strip(), "https://buzz.example.com/media")
+        self.assertEqual(
+            server.CORS_FILE.read_text().strip(),
+            "https://buzz.example.com,tauri://localhost,http://tauri.localhost",
+        )
+        self.assertEqual(server.COMMUNITY_MODE_FILE.read_text().strip(), "public")
         self.assertFalse(server.RESET_REQUEST_FILE.exists())
+
+    def test_local_mode_uses_discovered_url_and_derived_values(self) -> None:
+        payload = self.payload("12" * 32)
+        payload["communityMode"] = "local"
+        payload["communityUrl"] = "wss://attacker.example.com"
+        server.apply_configuration(payload)
+        self.assertEqual(server.RELAY_URL_FILE.read_text().strip(), "ws://umbrel.local:38634")
+        self.assertEqual(server.MEDIA_URL_FILE.read_text().strip(), "http://umbrel.local:38634/media")
+        self.assertEqual(
+            server.CORS_FILE.read_text().strip(),
+            "http://umbrel.local:38634,tauri://localhost,http://tauri.localhost",
+        )
+
+    def test_advanced_values_are_derived_not_accepted_from_client(self) -> None:
+        payload = self.payload("12" * 32)
+        payload["mediaBaseUrl"] = "https://attacker.example/media"
+        payload["corsOrigins"] = "https://attacker.example"
+        server.apply_configuration(payload)
+        self.assertEqual(server.MEDIA_URL_FILE.read_text().strip(), "https://buzz.example.com/media")
+        self.assertEqual(
+            server.CORS_FILE.read_text().strip(),
+            "https://buzz.example.com,tauri://localhost,http://tauri.localhost",
+        )
+
+    def test_desktop_policy_probe_origins_are_always_allowed(self) -> None:
+        _, local_origins = server.derive_runtime_urls("ws://umbrel.local:38634")
+        _, public_origins = server.derive_runtime_urls("wss://buzz.example.com")
+        for origins in (local_origins.split(","), public_origins.split(",")):
+            self.assertIn("tauri://localhost", origins)
+            self.assertIn("http://tauri.localhost", origins)
+
+    def test_public_mode_requires_wss(self) -> None:
+        payload = self.payload("12" * 32)
+        payload["communityUrl"] = "ws://buzz.example.com"
+        with self.assertRaisesRegex(server.InputError, "must start with wss://"):
+            server.apply_configuration(payload)
 
     def test_owner_change_requires_and_schedules_full_reset(self) -> None:
         server.apply_configuration(self.payload("12" * 32))
@@ -106,7 +152,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_rejects_non_websocket_relay_url(self) -> None:
         payload = self.payload("12" * 32)
-        payload["relayUrl"] = "https://buzz.example.com"
+        payload["communityUrl"] = "https://buzz.example.com"
         with self.assertRaisesRegex(server.InputError, "ws:// or wss://"):
             server.apply_configuration(payload)
 
@@ -118,6 +164,10 @@ class ConfigurationTests(unittest.TestCase):
         self.assertTrue(status["configured"])
         self.assertFalse(status["relayReady"])
         self.assertEqual(status["relayState"], "retrying-after-exit")
+        self.assertEqual(status["communityMode"], "public")
+        self.assertEqual(status["communityUrl"], "wss://buzz.example.com")
+        self.assertNotIn("mediaBaseUrl", status)
+        self.assertNotIn("corsOrigins", status)
 
 
 class StaticUiTests(unittest.TestCase):
@@ -125,6 +175,18 @@ class StaticUiTests(unittest.TestCase):
         app_js = (MODULE_PATH.parent / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn('status.relayState === "retrying-after-exit"', app_js)
         self.assertIn('setStatus("error", "Relay start failed; retrying")', app_js)
+
+    def test_guided_ui_uses_current_desktop_terminology(self) -> None:
+        html = (MODULE_PATH.parent / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Add a community", html)
+        self.assertIn("Join an existing community", html)
+        self.assertIn("Community URL or invite link", html)
+        self.assertIn("Copy community URL", html)
+        self.assertIn("Local testing", html)
+        self.assertIn("Public community", html)
+        self.assertNotIn('id="media-url"', html)
+        self.assertNotIn('id="cors-origins"', html)
+        self.assertNotIn("Cloudflare", html)
 
 
 if __name__ == "__main__":

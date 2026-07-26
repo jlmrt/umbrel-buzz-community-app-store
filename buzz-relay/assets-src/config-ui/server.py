@@ -29,6 +29,7 @@ PENDING_OWNER_FILE = CONFIG_DIR / "pending-owner-pubkey"
 RELAY_URL_FILE = CONFIG_DIR / "relay-url"
 MEDIA_URL_FILE = CONFIG_DIR / "media-base-url"
 CORS_FILE = CONFIG_DIR / "cors-origins"
+COMMUNITY_MODE_FILE = CONFIG_DIR / "community-mode"
 RESET_REQUEST_FILE = CONFIG_DIR / "reset-request"
 RESET_COMPLETED_FILE = CONFIG_DIR / "reset-completed"
 RESET_ERROR_FILE = CONFIG_DIR / "reset-error"
@@ -40,6 +41,7 @@ HEX_KEY_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 BECH32_LOOKUP = {char: index for index, char in enumerate(BECH32_CHARSET)}
 WRITE_LOCK = threading.Lock()
+DESKTOP_ORIGINS = ("tauri://localhost", "http://tauri.localhost")
 
 
 class InputError(ValueError):
@@ -182,45 +184,26 @@ def validate_relay_url(raw_value: object) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def validate_media_url(raw_value: object) -> str:
-    if not isinstance(raw_value, str) or not raw_value.strip():
-        raise InputError("Media base URL is required.")
-    value = raw_value.strip().rstrip("/")
-    try:
-        parsed = urlsplit(value)
-        _ = parsed.port
-    except ValueError as exc:
-        raise InputError("Media base URL has an invalid host or port.") from exc
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise InputError("Media base URL must start with http:// or https:// and include a host.")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise InputError("Media base URL cannot contain credentials, a query, or a fragment.")
-    return value
+def derive_runtime_urls(relay_url: str) -> tuple[str, str]:
+    parsed = urlsplit(validate_relay_url(relay_url))
+    http_scheme = "https" if parsed.scheme == "wss" else "http"
+    origin = f"{http_scheme}://{parsed.netloc}"
+    cors_origins = ",".join((origin, *DESKTOP_ORIGINS))
+    return f"{origin}/media", cors_origins
 
 
-def validate_cors_origins(raw_value: object) -> str:
-    if not isinstance(raw_value, str):
-        raise InputError("Allowed origins must be a comma-separated list.")
-    normalized: list[str] = []
-    for raw_origin in raw_value.split(","):
-        origin = raw_origin.strip().rstrip("/")
-        if not origin:
-            continue
-        try:
-            parsed = urlsplit(origin)
-            _ = parsed.port
-        except ValueError as exc:
-            raise InputError(f"Allowed origin is invalid: {origin}") from exc
-        if parsed.scheme not in {"http", "https", "tauri"} or not parsed.hostname:
-            raise InputError(f"Allowed origin must be an http, https, or tauri origin: {origin}")
-        if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise InputError(f"Allowed origin cannot contain credentials, a query, or a fragment: {origin}")
-        if parsed.path not in {"", "/"}:
-            raise InputError(f"Allowed origin cannot contain a path: {origin}")
-        normalized.append(f"{parsed.scheme}://{parsed.netloc}")
-    if not normalized:
-        raise InputError("Add at least one allowed origin; an empty list enables permissive CORS.")
-    return ",".join(dict.fromkeys(normalized))
+def select_community_url(payload: dict[str, object]) -> tuple[str, str]:
+    mode = payload.get("communityMode")
+    if mode == "local":
+        if not DEFAULT_RELAY_URL:
+            raise InputError("The local Community URL could not be discovered.")
+        return mode, validate_relay_url(DEFAULT_RELAY_URL)
+    if mode == "public":
+        relay_url = validate_relay_url(payload.get("communityUrl"))
+        if not relay_url.startswith("wss://"):
+            raise InputError("A public Community URL must start with wss://.")
+        return mode, relay_url
+    raise InputError("Choose Local testing or Public community.")
 
 
 def relay_is_ready() -> bool:
@@ -250,6 +233,13 @@ def current_key() -> tuple[str, str] | None:
 def status_payload() -> dict[str, object]:
     key = current_key()
     relay_url = read_first_line(RELAY_URL_FILE)
+    stored_mode = read_first_line(COMMUNITY_MODE_FILE)
+    try:
+        local_url = validate_relay_url(DEFAULT_RELAY_URL) if DEFAULT_RELAY_URL else ""
+    except InputError:
+        local_url = ""
+    if stored_mode not in {"local", "public"}:
+        stored_mode = "local" if not relay_url or relay_url == local_url else "public"
     reset_id = read_first_line(RESET_REQUEST_FILE)
     restart_id = read_first_line(RESTART_REQUEST_FILE)
     state = read_first_line(RELAY_STATE_FILE) or ("waiting-for-configuration" if not key else "starting")
@@ -258,10 +248,9 @@ def status_payload() -> dict[str, object]:
         "ownerConfigured": key is not None,
         "ownerHex": key[0] if key else "",
         "ownerNpub": key[1] if key else "",
-        "defaultRelayUrl": DEFAULT_RELAY_URL,
-        "relayUrl": relay_url,
-        "mediaBaseUrl": read_first_line(MEDIA_URL_FILE),
-        "corsOrigins": read_first_line(CORS_FILE),
+        "localCommunityUrl": local_url,
+        "communityMode": stored_mode,
+        "communityUrl": relay_url,
         "relayReady": bool(key) and bool(relay_url) and relay_is_ready(),
         "relayState": state,
         "resetting": bool(reset_id),
@@ -280,9 +269,8 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
         raise InputError(
             "A raw 64-character hex value can be either public or private material. Confirm that this value is a public key."
         )
-    relay_url = validate_relay_url(payload.get("relayUrl"))
-    media_url = validate_media_url(payload.get("mediaBaseUrl"))
-    cors_origins = validate_cors_origins(payload.get("corsOrigins"))
+    community_mode, relay_url = select_community_url(payload)
+    media_url, cors_origins = derive_runtime_urls(relay_url)
 
     with WRITE_LOCK:
         existing = current_key()
@@ -292,6 +280,7 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
                 read_first_line(RELAY_URL_FILE) != relay_url,
                 read_first_line(MEDIA_URL_FILE) != media_url,
                 read_first_line(CORS_FILE) != cors_origins,
+                read_first_line(COMMUNITY_MODE_FILE) != community_mode,
             )
         )
 
@@ -308,6 +297,7 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
             atomic_write(RELAY_URL_FILE, relay_url)
             atomic_write(MEDIA_URL_FILE, media_url)
             atomic_write(CORS_FILE, cors_origins)
+            atomic_write(COMMUNITY_MODE_FILE, community_mode)
             RESET_ERROR_FILE.unlink(missing_ok=True)
             atomic_write(RESET_REQUEST_FILE, request_id)
             return HTTPStatus.ACCEPTED, {
@@ -315,11 +305,13 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
                 "resetRequestId": request_id,
                 "ownerHex": public_hex,
                 "ownerNpub": npub,
+                "communityUrl": relay_url,
             }
 
         atomic_write(RELAY_URL_FILE, relay_url)
         atomic_write(MEDIA_URL_FILE, media_url)
         atomic_write(CORS_FILE, cors_origins)
+        atomic_write(COMMUNITY_MODE_FILE, community_mode)
 
         if not existing_hex:
             atomic_write(OWNER_FILE, public_hex)
@@ -327,6 +319,7 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
                 "message": "Configuration saved. Current startup status is shown above.",
                 "ownerHex": public_hex,
                 "ownerNpub": npub,
+                "communityUrl": relay_url,
             }
 
         if network_changed:
@@ -337,12 +330,14 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
                 "restartRequestId": request_id,
                 "ownerHex": public_hex,
                 "ownerNpub": npub,
+                "communityUrl": relay_url,
             }
 
         return HTTPStatus.OK, {
             "message": "Configuration is already current.",
             "ownerHex": public_hex,
             "ownerNpub": npub,
+            "communityUrl": relay_url,
         }
 
 
