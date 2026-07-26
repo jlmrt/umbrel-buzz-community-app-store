@@ -54,10 +54,16 @@ function renderStatus(nextStatus) {
     setStatus("working", "Restarting relay");
   } else if (status.relayReady) {
     setStatus("ready", "Relay ready");
-  } else if (status.configured) {
-    setStatus("working", "Relay initializing");
-  } else {
+  } else if (!status.configured) {
     setStatus("waiting", "Setup required");
+  } else if (status.relayState === "retrying-after-exit") {
+    setStatus("error", "Relay start failed; retrying");
+  } else if (status.relayState === "waiting-for-storage") {
+    setStatus("working", "Waiting for object storage");
+  } else if (status.relayState === "stopping") {
+    setStatus("working", "Relay stopping");
+  } else {
+    setStatus("working", "Relay starting");
   }
 
   if (!formTouched) {

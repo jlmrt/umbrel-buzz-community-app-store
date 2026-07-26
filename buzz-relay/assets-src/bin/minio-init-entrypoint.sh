@@ -2,6 +2,7 @@
 set -eu
 
 CONFIG_DIR="${BUZZ_CONFIG_DIR:-/config}"
+: "${BUZZ_S3_ENDPOINT:?BUZZ_S3_ENDPOINT is required}"
 REQUEST_FILE="${CONFIG_DIR}/reset-request"
 ACK_DIR="${CONFIG_DIR}/reset-acks"
 STORAGE_READY_FILE="${ACK_DIR}/minio-storage-ready"
@@ -27,7 +28,7 @@ write_marker() {
 }
 
 ensure_bucket() {
-  until mc alias set local http://minio:9000 "$BUZZ_S3_ACCESS_KEY" "$BUZZ_S3_SECRET_KEY" >/dev/null 2>&1; do
+  until mc alias set local "$BUZZ_S3_ENDPOINT" "$BUZZ_S3_ACCESS_KEY" "$BUZZ_S3_SECRET_KEY" >/dev/null 2>&1; do
     sleep 2
   done
   mc mb --ignore-existing "local/${BUZZ_S3_BUCKET}" >/dev/null

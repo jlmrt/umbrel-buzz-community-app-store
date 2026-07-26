@@ -23,6 +23,7 @@ decode_asset asset-bin-buzz-admin.sh.b64 bin/buzz-admin.sh
 decode_asset asset-bin-minio-init-entrypoint.sh.b64 bin/minio-init-entrypoint.sh
 decode_asset asset-bin-relay-entrypoint.sh.b64 bin/relay-entrypoint.sh
 decode_asset asset-bin-resettable-service-entrypoint.sh.b64 bin/resettable-service-entrypoint.sh
+decode_asset asset-bin-service-urls.sh.b64 bin/service-urls.sh
 decode_asset asset-config-ui-server.py.b64 config-ui/server.py
 decode_asset asset-config-ui-static-app.js.b64 config-ui/static/app.js
 decode_asset asset-config-ui-static-index.html.b64 config-ui/static/index.html

@@ -34,7 +34,7 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       BUZZ_CONFIG_DIR: /config
       BUZZ_SETUP_STATIC_DIR: /app/static
-      BUZZ_RELAY_HEALTH_HOST: relay
+      BUZZ_RELAY_HEALTH_HOST: buzz-relay_relay_1
       BUZZ_RELAY_HEALTH_PORT: "8080"
       BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_BUZZ_RELAY_PUBLIC_PORT}
     volumes:
@@ -63,9 +63,10 @@ services:
       BUZZ_BIND_ADDR: 0.0.0.0:3000
       BUZZ_HEALTH_PORT: "8080"
       BUZZ_METRICS_PORT: "9102"
-      DATABASE_URL: postgres://buzz:${APP_PASSWORD}@postgres:5432/buzz
-      REDIS_URL: redis://:${APP_PASSWORD}@redis:6379
-      BUZZ_S3_ENDPOINT: http://minio:9000
+      BUZZ_SERVICE_PASSWORD: ${APP_PASSWORD}
+      BUZZ_POSTGRES_HOST: buzz-relay_postgres_1
+      BUZZ_REDIS_HOST: buzz-relay_redis_1
+      BUZZ_S3_ENDPOINT: http://buzz-relay_minio_1:9000
       BUZZ_S3_ACCESS_KEY: buzz
       BUZZ_S3_SECRET_KEY: ${APP_PASSWORD}
       BUZZ_S3_BUCKET: buzz-media
@@ -127,11 +128,15 @@ services:
       - ${APP_DATA_DIR}/data/postgres:/var/lib/postgresql/data
       - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test:
+        [
+          "CMD-SHELL",
+          "PGPASSWORD=\"$${POSTGRES_PASSWORD}\" psql -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -Atqc 'SELECT 1' | grep -qx 1",
+        ]
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 10s
+      retries: 60
+      start_period: 2m
 
   redis:
     image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
@@ -148,7 +153,11 @@ services:
       - ${APP_DATA_DIR}/data/redis:/data
       - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a '${APP_PASSWORD}' ping | grep -q PONG"]
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -185,6 +194,7 @@ services:
         condition: service_healthy
     environment:
       BUZZ_CONFIG_DIR: /config
+      BUZZ_S3_ENDPOINT: http://buzz-relay_minio_1:9000
       BUZZ_S3_ACCESS_KEY: buzz
       BUZZ_S3_SECRET_KEY: ${APP_PASSWORD}
       BUZZ_S3_BUCKET: buzz-media

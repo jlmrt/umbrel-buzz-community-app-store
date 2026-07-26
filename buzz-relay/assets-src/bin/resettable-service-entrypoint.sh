@@ -77,10 +77,14 @@ stop_child() {
 service_ready() {
   case "$SERVICE" in
     postgres)
-      pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1
+      PGPASSWORD="$POSTGRES_PASSWORD" psql \
+        -h 127.0.0.1 \
+        -U "$POSTGRES_USER" \
+        -d "$POSTGRES_DB" \
+        -Atqc 'SELECT 1' 2>/dev/null | grep -qx 1
       ;;
     redis)
-      redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG
+      REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping 2>/dev/null | grep -q PONG
       ;;
     minio)
       curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null 2>&1

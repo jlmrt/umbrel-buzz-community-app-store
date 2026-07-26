@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 CONFIG_DIR = Path(os.environ.get("BUZZ_CONFIG_DIR", "/config"))
 STATIC_DIR = Path(os.environ.get("BUZZ_SETUP_STATIC_DIR", "/app/static"))
-RELAY_HEALTH_HOST = os.environ.get("BUZZ_RELAY_HEALTH_HOST", "relay")
+RELAY_HEALTH_HOST = os.environ.get("BUZZ_RELAY_HEALTH_HOST", "buzz-relay_relay_1")
 RELAY_HEALTH_PORT = int(os.environ.get("BUZZ_RELAY_HEALTH_PORT", "8080"))
 DEFAULT_RELAY_URL = os.environ.get("BUZZ_DEFAULT_RELAY_URL", "")
 
@@ -231,7 +231,7 @@ def relay_is_ready() -> bool:
         )
         connection.request("GET", "/_readiness")
         return connection.getresponse().status == HTTPStatus.OK
-    except OSError:
+    except (OSError, http.client.HTTPException):
         return False
     finally:
         if connection:
@@ -324,7 +324,7 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
         if not existing_hex:
             atomic_write(OWNER_FILE, public_hex)
             return HTTPStatus.ACCEPTED, {
-                "message": "Configuration saved. The relay is initializing.",
+                "message": "Configuration saved. Current startup status is shown above.",
                 "ownerHex": public_hex,
                 "ownerNpub": npub,
             }
@@ -333,7 +333,7 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
             request_id = uuid.uuid4().hex
             atomic_write(RESTART_REQUEST_FILE, request_id)
             return HTTPStatus.ACCEPTED, {
-                "message": "Network settings saved. The relay is restarting.",
+                "message": "Network settings saved. Current restart status is shown above.",
                 "restartRequestId": request_id,
                 "ownerHex": public_hex,
                 "ownerNpub": npub,

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source /opt/umbrel-buzz/service-urls.sh
+
 CONFIG_DIR="${BUZZ_CONFIG_DIR:-/config}"
 SECRETS_FILE="${CONFIG_DIR}/generated.env"
 RUNTIME_FILE="${CONFIG_DIR}/runtime.env"
@@ -226,6 +228,7 @@ shutdown() {
 trap shutdown INT TERM
 mkdir -p "$CONFIG_DIR" "$RESET_ACK_DIR" "$GIT_DIR" "$GIT_CACHE_DIR"
 umask 077
+configure_buzz_service_urls
 
 while true; do
   reset_id="$(first_line "$RESET_REQUEST_FILE")"
@@ -289,7 +292,7 @@ while true; do
 
   wait "$RELAY_PID" || true
   RELAY_PID=""
-  write_state stopped
+  write_state retrying-after-exit
   log "Relay process exited; retrying"
   sleep 3
 done

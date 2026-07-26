@@ -2,6 +2,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "buzz-relay" / "assets-src" / "config-ui" / "server.py"
@@ -108,6 +109,22 @@ class ConfigurationTests(unittest.TestCase):
         payload["relayUrl"] = "https://buzz.example.com"
         with self.assertRaisesRegex(server.InputError, "ws:// or wss://"):
             server.apply_configuration(payload)
+
+    def test_status_reports_failed_start_retry(self) -> None:
+        server.apply_configuration(self.payload("12" * 32))
+        server.RELAY_STATE_FILE.write_text("retrying-after-exit\n", encoding="utf-8")
+        with mock.patch.object(server, "relay_is_ready", return_value=False):
+            status = server.status_payload()
+        self.assertTrue(status["configured"])
+        self.assertFalse(status["relayReady"])
+        self.assertEqual(status["relayState"], "retrying-after-exit")
+
+
+class StaticUiTests(unittest.TestCase):
+    def test_retry_state_has_explicit_failure_text(self) -> None:
+        app_js = (MODULE_PATH.parent / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('status.relayState === "retrying-after-exit"', app_js)
+        self.assertIn('setStatus("error", "Relay start failed; retrying")', app_js)
 
 
 if __name__ == "__main__":

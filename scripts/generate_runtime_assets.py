@@ -19,6 +19,7 @@ ASSETS = {
     "bin/minio-init-entrypoint.sh": "assets-src/bin/minio-init-entrypoint.sh",
     "bin/relay-entrypoint.sh": "assets-src/bin/relay-entrypoint.sh",
     "bin/resettable-service-entrypoint.sh": "assets-src/bin/resettable-service-entrypoint.sh",
+    "bin/service-urls.sh": "assets-src/bin/service-urls.sh",
     "config-ui/server.py": "assets-src/config-ui/server.py",
     "config-ui/static/app.js": "assets-src/config-ui/static/app.js",
     "config-ui/static/index.html": "assets-src/config-ui/static/index.html",
