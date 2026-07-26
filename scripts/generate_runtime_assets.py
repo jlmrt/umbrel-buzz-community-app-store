@@ -23,7 +23,6 @@ ASSETS = {
     "config-ui/static/app.js": "assets-src/config-ui/static/app.js",
     "config-ui/static/index.html": "assets-src/config-ui/static/index.html",
     "config-ui/static/styles.css": "assets-src/config-ui/static/styles.css",
-    "gateway/nginx.conf": "assets-src/gateway/nginx.conf",
 }
 
 

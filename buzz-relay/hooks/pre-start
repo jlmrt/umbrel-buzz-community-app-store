@@ -11,7 +11,7 @@ cleanup() {
 trap cleanup EXIT
 
 rm -rf "$stage" "$previous"
-mkdir -p "$stage/bin" "$stage/config-ui/static" "$stage/gateway"
+mkdir -p "$stage/bin" "$stage/config-ui/static"
 
 decode_asset() {
   local encoded="$1"
@@ -27,11 +27,10 @@ decode_asset asset-config-ui-server.py.b64 config-ui/server.py
 decode_asset asset-config-ui-static-app.js.b64 config-ui/static/app.js
 decode_asset asset-config-ui-static-index.html.b64 config-ui/static/index.html
 decode_asset asset-config-ui-static-styles.css.b64 config-ui/static/styles.css
-decode_asset asset-gateway-nginx.conf.b64 gateway/nginx.conf
 
 (cd "$stage" && sha256sum --check "${app_dir}/asset-sha256")
 chmod 0755 "$stage"/bin/*.sh
-chmod 0644 "$stage/config-ui/server.py" "$stage"/config-ui/static/* "$stage/gateway/nginx.conf"
+chmod 0644 "$stage/config-ui/server.py" "$stage"/config-ui/static/*
 
 if [[ -d "${app_dir}/runtime" ]]; then
   mv "${app_dir}/runtime" "$previous"

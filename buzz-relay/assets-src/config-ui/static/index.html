@@ -10,7 +10,7 @@
     <main class="shell">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Umbrel configuration</p>
+          <p class="eyebrow">Umbrel admin</p>
           <h1>Buzz Relay</h1>
         </div>
         <div class="status" id="relay-status" data-state="loading">
@@ -22,11 +22,11 @@
       <section class="notice" aria-labelledby="local-access-title">
         <div class="notice-mark" aria-hidden="true">!</div>
         <div>
-          <h2 id="local-access-title">Local administration page</h2>
+          <h2 id="local-access-title">Umbrel-authenticated administration</h2>
           <p>
-            Keep this page on a trusted local network. Anyone who can reach it may
-            change relay settings or trigger a destructive reset. Never paste an
-            <code>nsec</code> or private key here.
+            This admin surface is protected by Umbrel sign-in and is separate
+            from the relay endpoint. Keep the Umbrel admin port private. Never
+            paste an <code>nsec</code> or private key here.
           </p>
         </div>
       </section>
@@ -146,8 +146,8 @@
       <section class="result hidden" id="result" aria-live="polite"></section>
 
       <footer>
-        <p>The relay and setup page share this app's Umbrel port.</p>
-        <a href="https://github.com/jlmrt/umbrel-buzz-community-app-store#public-httpswss-with-cloudflare" target="_blank" rel="noreferrer">Deployment guide</a>
+        <p>Administration and relay traffic use separate ports.</p>
+        <a href="https://github.com/jlmrt/umbrel-buzz-community-app-store#endpoints-and-public-access" target="_blank" rel="noreferrer">Endpoint notes</a>
       </footer>
     </main>
     <script src="app.js" defer></script>

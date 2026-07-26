@@ -3,9 +3,8 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: buzz-relay_gateway_1
+      APP_HOST: buzz-relay_config_1
       APP_PORT: 8080
-      PROXY_AUTH_ADD: "false"
 
   setup:
     image: alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
@@ -19,28 +18,6 @@ services:
     volumes:
       - ${APP_DATA_DIR}/data:/data
     restart: on-failure
-
-  gateway:
-    image: nginx:alpine3.23@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
-    restart: on-failure
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-    volumes:
-      - ${APP_DATA_DIR}/runtime/gateway:/etc/nginx/conf.d:ro
-    tmpfs:
-      - /var/cache/nginx:size=16m,mode=0755
-      - /var/run:size=1m,mode=0755
-      - /tmp:size=8m,mode=1777
-    depends_on:
-      config:
-        condition: service_started
 
   config:
     image: python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
@@ -59,7 +36,7 @@ services:
       BUZZ_SETUP_STATIC_DIR: /app/static
       BUZZ_RELAY_HEALTH_HOST: relay
       BUZZ_RELAY_HEALTH_PORT: "8080"
-      BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_PROXY_PORT}
+      BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_BUZZ_RELAY_PUBLIC_PORT}
     volumes:
       - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/runtime/config-ui:/app:ro
@@ -75,6 +52,8 @@ services:
     restart: on-failure
     stop_grace_period: 1m
     entrypoint: ["/opt/umbrel-buzz/relay-entrypoint.sh"]
+    ports:
+      - "${APP_BUZZ_RELAY_PUBLIC_PORT}:3000"
     volumes:
       - ${APP_DATA_DIR}/data/config:/config
       - ${APP_DATA_DIR}/data/git:/data/git

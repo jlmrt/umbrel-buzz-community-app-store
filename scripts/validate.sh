@@ -12,6 +12,7 @@ bash -n buzz-relay/assets-src/bin/relay-entrypoint.sh
 bash -n buzz-relay/assets-src/bin/buzz-admin.sh
 bash -n buzz-relay/assets-src/bin/resettable-service-entrypoint.sh
 bash -n buzz-relay/assets-src/bin/minio-init-entrypoint.sh
+bash -n buzz-relay/exports.sh
 bash -n buzz-relay/hooks/pre-start
 bash -n scripts/validate.sh
 bash -n scripts/run-umbrel-lint.sh
@@ -37,8 +38,25 @@ cmp buzz-relay/assets-src/config-ui/server.py "$runtime_test/runtime/config-ui/s
 cmp buzz-relay/assets-src/config-ui/static/app.js "$runtime_test/runtime/config-ui/static/app.js"
 cmp buzz-relay/assets-src/config-ui/static/index.html "$runtime_test/runtime/config-ui/static/index.html"
 cmp buzz-relay/assets-src/config-ui/static/styles.css "$runtime_test/runtime/config-ui/static/styles.css"
-cmp buzz-relay/assets-src/gateway/nginx.conf "$runtime_test/runtime/gateway/nginx.conf"
 echo "runtime asset hook ok"
+
+ruby -e '
+  require "yaml"
+  compose = YAML.load_file("buzz-relay/docker-compose.yml")
+  services = compose.fetch("services")
+  proxy = services.fetch("app_proxy").fetch("environment")
+  config = services.fetch("config")
+  relay = services.fetch("relay")
+  manifest = YAML.load_file("buzz-relay/umbrel-app.yml")
+  abort "app_proxy must target config" unless proxy == {"APP_HOST" => "buzz-relay_config_1", "APP_PORT" => 8080}
+  abort "config must not publish a host port" if config.key?("ports")
+  abort "shared gateway must not exist" if services.key?("gateway")
+  abort "relay public port mapping missing" unless relay.fetch("ports") == ["${APP_BUZZ_RELAY_PUBLIC_PORT}:3000"]
+  abort "launcher must use the authenticated app-proxy port" unless manifest.fetch("port") == 38633 && manifest.fetch("path") == ""
+  abort "public port export missing" unless File.read("buzz-relay/exports.sh").include?(%q{APP_BUZZ_RELAY_PUBLIC_PORT="38634"})
+  abort "not-ready warning missing" unless File.read("README.md").include?("NOT READY FOR INSTALLATION") && manifest.fetch("description").include?("NOT READY FOR INSTALLATION")
+'
+echo "admin and relay endpoints are statically separated"
 
 if rg -n '\./scripts/|\./config-ui/' buzz-relay; then
   echo "non-update-safe runtime mount found" >&2
