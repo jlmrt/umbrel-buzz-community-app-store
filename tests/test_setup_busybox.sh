@@ -4,7 +4,15 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1"
 test_root="$(mktemp -d)"
-trap 'rm -rf "$test_root"' EXIT
+
+cleanup() {
+  docker run --rm \
+    --mount "type=bind,src=$test_root/package,dst=/package" \
+    "$image" \
+    chmod -R a+rwX /package >/dev/null 2>&1 || true
+  rm -rf "$test_root"
+}
+trap cleanup EXIT
 
 mkdir -p "$test_root/package/hooks" "$test_root/package/runtime"
 cp -p "$repo_root/buzz-relay/hooks/pre-start" "$test_root/package/hooks/pre-start"
