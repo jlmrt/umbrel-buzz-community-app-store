@@ -20,6 +20,7 @@ bash -n scripts/validate.sh
 bash -n scripts/run-umbrel-lint.sh
 bash -n tests/test_service_urls.sh
 bash -n tests/test_backup_worker.sh
+bash -n tests/test_setup_busybox.sh
 
 python3 -m py_compile scripts/check_upstream_buzz.py
 python3 -m py_compile scripts/generate_runtime_assets.py
@@ -28,6 +29,11 @@ python3 scripts/generate_runtime_assets.py --check
 python3 -m unittest discover -s tests -v
 tests/test_service_urls.sh
 tests/test_backup_worker.sh
+if command -v docker >/dev/null 2>&1; then
+  tests/test_setup_busybox.sh
+else
+  echo "BusyBox setup verification skipped: docker is unavailable"
+fi
 
 runtime_test="$(mktemp -d)"
 trap 'rm -rf "$runtime_test"' EXIT
@@ -71,13 +77,20 @@ ruby -e '
   minio_init = services.fetch("minio-init")
   manifest = YAML.load_file("buzz-relay/umbrel-app.yml")
   abort "app_proxy must target config" unless proxy == {"APP_HOST" => "buzz-relay_config_1", "APP_PORT" => 8080}
+  abort "app_proxy must wait for a healthy config service" unless services.fetch("app_proxy").dig("depends_on", "config", "condition") == "service_healthy"
   abort "config must not publish a host port" if config.key?("ports")
+  abort "config healthcheck missing" unless config.dig("healthcheck", "test")&.join(" ")&.include?("http://127.0.0.1:8080/")
+  abort "config restart retries must be bounded" unless config.fetch("restart") == "on-failure:3"
   setup_command = setup.fetch("command")
   abort "setup must verify runtime assets on every container start" unless setup_command.include?("BUZZ_RUNTIME_IN_PLACE=1 /package/hooks/pre-start")
+  abort "setup must emit an actionable staging failure" unless setup_command.include?("verified runtime asset staging failed")
+  abort "setup failure must be terminal" unless setup.fetch("restart") == "no"
   abort "setup runtime destination must be writable" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/runtime:/package/runtime")
   abort "setup data destination must be writable" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/data:/package/data")
   abort "setup hook must be mounted read-only" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/hooks:/package/hooks:ro")
   abort "setup checksum source must be mounted read-only" unless setup.fetch("volumes").include?("${APP_DATA_DIR}/asset-sha256.template:/package/asset-sha256:ro")
+  abort "runtime verification must use portable BusyBox checksum syntax" unless File.read("buzz-relay/hooks/pre-start").scan(/sha256sum -c /).length == 2
+  abort "GNU-only checksum syntax is not allowed" if File.read("buzz-relay/hooks/pre-start").include?("sha256sum --check")
   abort "operations worker must not publish a host port" if operations.key?("ports")
   abort "shared gateway must not exist" if services.key?("gateway")
   abort "relay public port mapping missing" unless relay.fetch("ports") == ["${APP_BUZZ_RELAY_PUBLIC_PORT}:3000"]

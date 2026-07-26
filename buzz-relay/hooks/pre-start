@@ -30,7 +30,7 @@ decode_asset asset-config-ui-static-app.js.b64 config-ui/static/app.js
 decode_asset asset-config-ui-static-index.html.b64 config-ui/static/index.html
 decode_asset asset-config-ui-static-styles.css.b64 config-ui/static/styles.css
 
-(cd "$stage" && sha256sum --check "${app_dir}/asset-sha256")
+(cd "$stage" && sha256sum -c "${app_dir}/asset-sha256")
 printf '%s\n' "${APP_VERSION:-unknown}" > "$stage/package-version"
 chmod 0755 "$stage"/bin/*.sh
 chmod 0644 "$stage/config-ui/server.py" "$stage"/config-ui/static/*
@@ -42,7 +42,7 @@ if [ "${BUZZ_RUNTIME_IN_PLACE:-0}" = "1" ]; then
   cp -R "$stage/bin/." "${app_dir}/runtime/bin/"
   cp -R "$stage/config-ui/." "${app_dir}/runtime/config-ui/"
   cp "$stage/package-version" "${app_dir}/runtime/package-version"
-  (cd "${app_dir}/runtime" && sha256sum --check "${app_dir}/asset-sha256")
+  (cd "${app_dir}/runtime" && sha256sum -c "${app_dir}/asset-sha256")
   rm -rf "$stage"
   trap - EXIT HUP INT TERM
   exit 0

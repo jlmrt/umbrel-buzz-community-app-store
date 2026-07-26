@@ -3,7 +3,7 @@ id: buzz-relay
 name: Buzz Relay
 tagline: "NOT READY: runtime verification pending"
 category: social
-version: "0.4.26-1a56b7c-7"
+version: "0.4.26-1a56b7c-8"
 port: 38633
 path: ""
 icon: icon.svg
@@ -43,6 +43,7 @@ releaseNotes: >-
   Locks the canonical Community URL after initialization because each URL identifies a distinct Buzz community.
   Adds authenticated metadata-only relay health, aggregate usage statistics, storage totals, and a coordinated local backup export.
   Restore remains intentionally unavailable until destructive clean-device recovery testing validates credential migration and rollback.
+  Fixes a BusyBox checksum compatibility failure that blocked setup, makes setup failures terminal and explicit, and waits for a healthy admin service before starting the Umbrel proxy.
   Fixes local Community URL discovery when operations metadata was created by the root backup worker, and verifies runtime assets again inside the setup service.
   Allows the official Buzz Desktop webview origins to complete join-policy discovery before the NIP-42 WebSocket flow.
   Uses an Umbrel-authenticated admin surface separated from the relay endpoint, closed relay authentication, authenticated media reads, and disabled external push delivery.

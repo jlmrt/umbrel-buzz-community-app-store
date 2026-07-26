@@ -5,6 +5,9 @@ services:
     environment:
       APP_HOST: buzz-relay_config_1
       APP_PORT: 8080
+    depends_on:
+      config:
+        condition: service_healthy
 
   setup:
     image: alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
@@ -14,10 +17,13 @@ services:
         mkdir -p /package/data/config/reset-acks /package/data/config/backup-acks /package/data/backups /package/data/git /package/data/git-cache /package/data/postgres /package/data/redis /package/data/minio
         chown -R 1000:1000 /package/data/config /package/data/backups /package/data/git /package/data/git-cache
         chmod 700 /package/data/config
-        APP_DATA_DIR=/package APP_VERSION="$${BUZZ_PACKAGE_VERSION}" BUZZ_RUNTIME_IN_PLACE=1 /package/hooks/pre-start
+        if ! APP_DATA_DIR=/package APP_VERSION="$${BUZZ_PACKAGE_VERSION}" BUZZ_RUNTIME_IN_PLACE=1 /package/hooks/pre-start; then
+          echo >&2 "[umbrel-buzz] ERROR: verified runtime asset staging failed; setup cannot continue. Review the setup container log above."
+          exit 1
+        fi
       '
     environment:
-      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-8"
     volumes:
       - ${APP_DATA_DIR}/data:/package/data
       - ${APP_DATA_DIR}/runtime:/package/runtime
@@ -33,13 +39,13 @@ services:
       - ${APP_DATA_DIR}/asset-config-ui-static-index.html.b64.template:/package/asset-config-ui-static-index.html.b64:ro
       - ${APP_DATA_DIR}/asset-config-ui-static-styles.css.b64.template:/package/asset-config-ui-static-styles.css.b64:ro
       - ${APP_DATA_DIR}/asset-sha256.template:/package/asset-sha256:ro
-    restart: on-failure
+    restart: "no"
 
   config:
     image: python:3.13-alpine@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
     user: "1000:1000"
     init: true
-    restart: on-failure
+    restart: "on-failure:3"
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -57,7 +63,7 @@ services:
       BUZZ_MINIO_HEALTH_HOST: buzz-relay-minio
       BUZZ_MINIO_HEALTH_PORT: "9000"
       BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_BUZZ_RELAY_PUBLIC_PORT}
-      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-8"
       BUZZ_BACKUP_DIR: /backups
       BUZZ_BACKUP_MAX_BYTES: "53687091200"
     volumes:
@@ -66,6 +72,18 @@ services:
       - ${APP_DATA_DIR}/runtime/config-ui:/app:ro
     tmpfs:
       - /tmp:size=16m,mode=1777
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=2).read(1)",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
     depends_on:
       setup:
         condition: service_completed_successfully
@@ -82,7 +100,7 @@ services:
       BUZZ_BACKUP_DIR: /backups
       BUZZ_BACKUP_SOURCE_ROOT: /source
       BUZZ_BACKUP_MAX_BYTES: "53687091200"
-      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-7"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-8"
       BUZZ_POSTGRES_HOST: buzz-relay_postgres_1
       POSTGRES_DB: buzz
       POSTGRES_USER: buzz
