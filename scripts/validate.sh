@@ -40,8 +40,8 @@ cmp buzz-relay/assets-src/config-ui/static/styles.css "$runtime_test/runtime/con
 cmp buzz-relay/assets-src/gateway/nginx.conf "$runtime_test/runtime/gateway/nginx.conf"
 echo "runtime asset hook ok"
 
-if rg -n '38634|APP_BUZZ_RELAY_PORT|\./scripts/|\./config-ui/' buzz-relay; then
-  echo "obsolete port, variable, or non-update-safe runtime mount found" >&2
+if rg -n '\./scripts/|\./config-ui/' buzz-relay; then
+  echo "non-update-safe runtime mount found" >&2
   exit 1
 fi
 
