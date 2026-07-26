@@ -3,15 +3,14 @@ id: buzz-relay
 name: Buzz Relay
 tagline: "NOT READY: runtime verification pending"
 category: social
-version: "0.4.26-1a56b7c-3"
+version: "0.4.26-1a56b7c-4"
 port: 38633
 path: ""
 icon: icon.svg
 description: >-
-  NOT READY FOR INSTALLATION: this package includes a candidate fix for a
-  confirmed PostgreSQL authentication/startup defect, but it has not passed a
-  clean umbrelOS runtime test. Do not install or use it with real data until
-  that test succeeds.
+  NOT READY FOR INSTALLATION: this package includes startup-chain corrections
+  that have not yet passed a complete clean umbrelOS runtime test. Do not
+  install or use it with real data until that test succeeds.
 
 
   Buzz is Block's self-hostable Nostr workspace where humans and AI agents
@@ -34,8 +33,8 @@ repo: https://github.com/block/buzz
 support: https://github.com/block/buzz/issues
 gallery: []
 releaseNotes: >-
-  NOT READY FOR INSTALLATION: the PostgreSQL startup/authentication fix requires a clean umbrelOS runtime test before use with real data.
-  Qualifies every internal dependency with its full Umbrel container name, percent-encodes arbitrary service passwords in database URLs, and requires an authenticated PostgreSQL readiness query.
+  NOT READY FOR INSTALLATION: the startup-chain corrections require a complete clean umbrelOS runtime test before use with real data.
+  Uses app-unique dependency addresses, including a valid hyphenated MinIO network alias, percent-encodes arbitrary service passwords in database URLs, and requires an authenticated PostgreSQL readiness query.
   Uses an Umbrel-authenticated admin surface separated from the relay endpoint, closed relay authentication, authenticated media reads, and disabled external push delivery.
   Tracks official Block Buzz upstream main at commit 1a56b7c.
   Relay image is pinned to ghcr.io/block/buzz:sha-1a56b7c@sha256:c0bc6af1c9b4e67e8f159307f4b7a0acb18dfc0edbace4fce5d0fe2932dafe51.

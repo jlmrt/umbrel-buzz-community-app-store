@@ -265,8 +265,8 @@ def update_manifest(version: str, target_ref: str, short_sha: str, image: str, l
         release_ref = f"{latest_release.get('tag_name')} published {latest_release.get('published_at')}"
 
     notes = [
-        "NOT READY FOR INSTALLATION: the PostgreSQL startup/authentication fix requires a clean umbrelOS runtime test before use with real data.",
-        "Qualifies every internal dependency with its full Umbrel container name, percent-encodes arbitrary service passwords in database URLs, and requires an authenticated PostgreSQL readiness query.",
+        "NOT READY FOR INSTALLATION: the startup-chain corrections require a complete clean umbrelOS runtime test before use with real data.",
+        "Uses app-unique dependency addresses, including a valid hyphenated MinIO network alias, percent-encodes arbitrary service passwords in database URLs, and requires an authenticated PostgreSQL readiness query.",
         "Uses an Umbrel-authenticated admin surface separated from the relay endpoint, closed relay authentication, authenticated media reads, and disabled external push delivery.",
         f"Tracks official Block Buzz upstream {target_ref} at commit {short_sha}.",
         f"Relay image is pinned to {image}.",

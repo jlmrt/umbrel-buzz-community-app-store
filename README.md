@@ -1,10 +1,9 @@
 # Buzz Umbrel Community App Store
 
 > [!CAUTION]
-> **NOT READY FOR INSTALLATION.** This package includes a candidate fix for a
-> confirmed PostgreSQL authentication/startup defect, but it has not passed a
-> clean umbrelOS runtime test. Do not install or use this package with real data
-> until that test succeeds.
+> **NOT READY FOR INSTALLATION.** This package includes startup-chain
+> corrections that have not yet passed a complete clean umbrelOS runtime test.
+> Do not install or use this package with real data until that test succeeds.
 
 This Community App Store packages Block's Buzz relay for umbrelOS with
 PostgreSQL, Redis, MinIO, persistent git storage, and a small configuration UI.

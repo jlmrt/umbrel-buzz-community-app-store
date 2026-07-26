@@ -66,7 +66,7 @@ services:
       BUZZ_SERVICE_PASSWORD: ${APP_PASSWORD}
       BUZZ_POSTGRES_HOST: buzz-relay_postgres_1
       BUZZ_REDIS_HOST: buzz-relay_redis_1
-      BUZZ_S3_ENDPOINT: http://buzz-relay_minio_1:9000
+      BUZZ_S3_ENDPOINT: http://buzz-relay-minio:9000
       BUZZ_S3_ACCESS_KEY: buzz
       BUZZ_S3_SECRET_KEY: ${APP_PASSWORD}
       BUZZ_S3_BUCKET: buzz-media
@@ -168,6 +168,10 @@ services:
     user: "0:0"
     restart: on-failure
     stop_grace_period: 1m
+    networks:
+      default:
+        aliases:
+          - buzz-relay-minio
     entrypoint: ["/opt/umbrel-buzz/resettable-service-entrypoint.sh"]
     environment:
       BUZZ_CONFIG_DIR: /config
@@ -194,7 +198,7 @@ services:
         condition: service_healthy
     environment:
       BUZZ_CONFIG_DIR: /config
-      BUZZ_S3_ENDPOINT: http://buzz-relay_minio_1:9000
+      BUZZ_S3_ENDPOINT: http://buzz-relay-minio:9000
       BUZZ_S3_ACCESS_KEY: buzz
       BUZZ_S3_SECRET_KEY: ${APP_PASSWORD}
       BUZZ_S3_BUCKET: buzz-media

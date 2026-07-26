@@ -46,6 +46,7 @@ echo "runtime asset hook ok"
 
 ruby -e '
   require "yaml"
+  require "uri"
   compose = YAML.load_file("buzz-relay/docker-compose.yml")
   services = compose.fetch("services")
   proxy = services.fetch("app_proxy").fetch("environment")
@@ -63,9 +64,19 @@ ruby -e '
   abort "relay service password input missing" unless relay_env.key?("BUZZ_SERVICE_PASSWORD")
   abort "relay database host is not collision-safe" unless relay_env.fetch("BUZZ_POSTGRES_HOST") == "buzz-relay_postgres_1"
   abort "relay Redis host is not collision-safe" unless relay_env.fetch("BUZZ_REDIS_HOST") == "buzz-relay_redis_1"
-  abort "relay MinIO host is not collision-safe" unless relay_env.fetch("BUZZ_S3_ENDPOINT") == "http://buzz-relay_minio_1:9000"
+  minio_aliases = services.fetch("minio").dig("networks", "default", "aliases") || []
+  minio_alias = "buzz-relay-minio"
+  abort "MinIO must have its package-qualified network alias" unless minio_aliases == [minio_alias]
+  all_aliases = services.values.flat_map { |service| service.dig("networks", "default", "aliases") || [] }
+  abort "MinIO network alias must be unique" unless all_aliases.count(minio_alias) == 1
+  abort "generic dependency network alias found" if all_aliases.any? { |name| %w[postgres redis minio relay config].include?(name) }
+  valid_hostname = minio_alias.length <= 253 && minio_alias.split(".").all? { |label| label.match?(/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/) }
+  abort "MinIO network alias is not an RFC-valid hostname" unless valid_hostname
+  minio_endpoint = relay_env.fetch("BUZZ_S3_ENDPOINT")
+  parsed_endpoint = URI.parse(minio_endpoint)
+  abort "relay MinIO URL is invalid" unless parsed_endpoint.scheme == "http" && parsed_endpoint.host == minio_alias && parsed_endpoint.port == 9000 && parsed_endpoint.userinfo.nil? && [nil, "", "/"].include?(parsed_endpoint.path) && parsed_endpoint.query.nil? && parsed_endpoint.fragment.nil?
   abort "config health host is not collision-safe" unless config.fetch("environment").fetch("BUZZ_RELAY_HEALTH_HOST") == "buzz-relay_relay_1"
-  abort "MinIO initializer host is not collision-safe" unless minio_init.fetch("environment").fetch("BUZZ_S3_ENDPOINT") == "http://buzz-relay_minio_1:9000"
+  abort "MinIO initializer endpoint differs from relay" unless minio_init.fetch("environment").fetch("BUZZ_S3_ENDPOINT") == minio_endpoint
   postgres_health = postgres.fetch("healthcheck").fetch("test").join(" ")
   abort "Postgres healthcheck must authenticate over TCP" unless postgres_health.include?("PGPASSWORD") && postgres_health.include?("psql -h 127.0.0.1") && postgres_health.include?("SELECT 1")
   redis_health = services.fetch("redis").fetch("healthcheck").fetch("test").join(" ")
