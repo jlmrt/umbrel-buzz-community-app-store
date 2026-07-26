@@ -41,8 +41,11 @@ class ConfigurationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         config_dir = Path(self.temporary.name)
+        backup_dir = config_dir / "backups"
+        backup_dir.mkdir()
         paths = {
             "CONFIG_DIR": config_dir,
+            "BACKUP_DIR": backup_dir,
             "OWNER_FILE": config_dir / "relay-owner-pubkey",
             "PENDING_OWNER_FILE": config_dir / "pending-owner-pubkey",
             "RELAY_URL_FILE": config_dir / "relay-url",
@@ -55,17 +58,33 @@ class ConfigurationTests(unittest.TestCase):
             "RESTART_REQUEST_FILE": config_dir / "restart-request",
             "RESTART_COMPLETED_FILE": config_dir / "restart-completed",
             "RELAY_STATE_FILE": config_dir / "relay-state",
+            "BACKUP_REQUEST_FILE": config_dir / "backup-request",
+            "BACKUP_STATE_FILE": config_dir / "backup-state",
+            "BACKUP_PROGRESS_FILE": config_dir / "backup-progress",
+            "BACKUP_MESSAGE_FILE": config_dir / "backup-message",
+            "BACKUP_CURRENT_ID_FILE": config_dir / "backup-current-id",
+            "BACKUP_LATEST_NAME_FILE": config_dir / "backup-latest-name",
+            "BACKUP_LATEST_SIZE_FILE": config_dir / "backup-latest-size",
+            "BACKUP_LATEST_SHA_FILE": config_dir / "backup-latest-sha256",
+            "BACKUP_LATEST_CREATED_FILE": config_dir / "backup-latest-created-at",
+            "OPERATIONS_HEARTBEAT_FILE": config_dir / "operations-heartbeat",
+            "STORAGE_STATS_FILE": config_dir / "storage-stats",
+            "ACTIVITY_COUNT_FILE": config_dir / "activity-observed-count",
+            "ACTIVITY_AT_FILE": config_dir / "activity-observed-at",
         }
         self.originals = {name: getattr(server, name) for name in paths}
         for name, value in paths.items():
             setattr(server, name, value)
         self.original_default_relay_url = server.DEFAULT_RELAY_URL
+        self.original_stats_cache = server.STATS_CACHE
         server.DEFAULT_RELAY_URL = "ws://umbrel.local:38634"
+        server.STATS_CACHE = None
 
     def tearDown(self) -> None:
         for name, value in self.originals.items():
             setattr(server, name, value)
         server.DEFAULT_RELAY_URL = self.original_default_relay_url
+        server.STATS_CACHE = self.original_stats_cache
         self.temporary.cleanup()
 
     @staticmethod
@@ -150,6 +169,45 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(server.PENDING_OWNER_FILE.read_text().strip(), "34" * 32)
         self.assertTrue(server.RESET_REQUEST_FILE.read_text().strip())
 
+    def test_canonical_community_url_is_immutable_after_initialization(self) -> None:
+        server.apply_configuration(self.payload("12" * 32))
+        payload = self.payload("12" * 32)
+        payload["communityUrl"] = "wss://different.example.com"
+        status, response = server.apply_configuration(payload)
+        self.assertEqual(status, 409)
+        self.assertTrue(response["requiresNewCommunityReset"])
+        self.assertEqual(response["currentCommunityUrl"], "wss://buzz.example.com")
+        self.assertEqual(server.RELAY_URL_FILE.read_text().strip(), "wss://buzz.example.com")
+        self.assertFalse(server.RESTART_REQUEST_FILE.exists())
+
+    def test_configuration_is_blocked_while_backup_runs(self) -> None:
+        server.apply_configuration(self.payload("12" * 32))
+        server.BACKUP_REQUEST_FILE.write_text(f"{mock.sentinel.backup}\n", encoding="utf-8")
+        status, response = server.apply_configuration(self.payload("12" * 32))
+        self.assertEqual(status, 409)
+        self.assertIn("backup", response["error"])
+
+    def test_backup_requires_sensitive_ack_and_live_worker(self) -> None:
+        server.apply_configuration(self.payload("12" * 32))
+        with self.assertRaisesRegex(server.InputError, "sensitive private data"):
+            server.request_backup({"acknowledgeSensitive": False})
+        with mock.patch.object(server, "operations_online", return_value=False):
+            status, response = server.request_backup({"acknowledgeSensitive": True})
+        self.assertEqual(status, 503)
+        self.assertIn("worker", response["error"])
+
+    def test_backup_request_uses_server_generated_uuid(self) -> None:
+        server.apply_configuration(self.payload("12" * 32))
+        with mock.patch.object(server, "operations_online", return_value=True):
+            status, response = server.request_backup({"acknowledgeSensitive": True})
+        self.assertEqual(status, 202)
+        request_id = server.BACKUP_REQUEST_FILE.read_text().strip()
+        self.assertEqual(response["backupRequestId"], request_id)
+        self.assertRegex(
+            request_id,
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        )
+
     def test_rejects_non_websocket_relay_url(self) -> None:
         payload = self.payload("12" * 32)
         payload["communityUrl"] = "https://buzz.example.com"
@@ -159,7 +217,12 @@ class ConfigurationTests(unittest.TestCase):
     def test_status_reports_failed_start_retry(self) -> None:
         server.apply_configuration(self.payload("12" * 32))
         server.RELAY_STATE_FILE.write_text("retrying-after-exit\n", encoding="utf-8")
-        with mock.patch.object(server, "relay_is_ready", return_value=False):
+        stats = {
+            "relayReady": False,
+            "relayReachable": False,
+            "relayState": "retrying-after-exit",
+        }
+        with mock.patch.object(server, "operational_stats", return_value=stats):
             status = server.status_payload()
         self.assertTrue(status["configured"])
         self.assertFalse(status["relayReady"])
@@ -168,6 +231,48 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(status["communityUrl"], "wss://buzz.example.com")
         self.assertNotIn("mediaBaseUrl", status)
         self.assertNotIn("corsOrigins", status)
+
+
+class OperationsTests(unittest.TestCase):
+    def test_prometheus_parser_returns_aggregate_numbers_without_labels(self) -> None:
+        parsed = server.parse_prometheus_metrics(
+            """
+# HELP buzz_total_relay_members aggregate
+buzz_total_relay_members{role="owner"} 1
+buzz_total_relay_members{role="member"} 4
+buzz_total_channels{community="private.example",type="stream"} 3
+invalid value
+"""
+        )
+        self.assertEqual(parsed["buzz_total_relay_members"], 5)
+        self.assertEqual(parsed["buzz_total_channels"], 3)
+        self.assertNotIn("private.example", repr(parsed))
+
+    def test_latest_backup_rejects_untrusted_name_and_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original_dir = server.BACKUP_DIR
+            original_name = server.BACKUP_LATEST_NAME_FILE
+            try:
+                server.BACKUP_DIR = root
+                server.BACKUP_LATEST_NAME_FILE = root / "latest-name"
+                server.BACKUP_LATEST_NAME_FILE.write_text("../../etc/passwd\n", encoding="utf-8")
+                self.assertIsNone(server.latest_backup_path())
+                archive_name = "buzz-relay-backup-20260727T120000Z-1234abcd.tar"
+                (root / archive_name).symlink_to("/etc/passwd")
+                server.BACKUP_LATEST_NAME_FILE.write_text(f"{archive_name}\n", encoding="utf-8")
+                self.assertIsNone(server.latest_backup_path())
+            finally:
+                server.BACKUP_DIR = original_dir
+                server.BACKUP_LATEST_NAME_FILE = original_name
+
+    def test_backup_status_tolerates_archive_rotation(self) -> None:
+        missing = Path(tempfile.gettempdir()) / "buzz-backup-replaced-before-status.tar"
+        missing.unlink(missing_ok=True)
+        with mock.patch.object(server, "latest_backup_path", return_value=missing):
+            status = server.backup_status_payload()
+        self.assertFalse(status["latest"]["available"])
+        self.assertEqual(status["latest"]["sizeBytes"], 0)
 
 
 class StaticUiTests(unittest.TestCase):
@@ -187,6 +292,23 @@ class StaticUiTests(unittest.TestCase):
         self.assertNotIn('id="media-url"', html)
         self.assertNotIn('id="cors-origins"', html)
         self.assertNotIn("Cloudflare", html)
+
+    def test_canonical_url_is_locked_and_restore_is_not_overclaimed(self) -> None:
+        html = (MODULE_PATH.parent / "static" / "index.html").read_text(encoding="utf-8")
+        app_js = (MODULE_PATH.parent / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("permanent boundary", html)
+        self.assertIn("Canonical Community URL locked", html)
+        self.assertIn("Restore", html)
+        self.assertIn("intentionally unavailable", html)
+        self.assertIn("communityControls.disabled = locked", app_js)
+        self.assertNotIn('type="file"', html)
+
+    def test_operations_ui_discloses_metadata_and_sensitive_backup(self) -> None:
+        html = (MODULE_PATH.parent / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("health and aggregate metadata only", html)
+        self.assertIn("Sensitive archive", html)
+        self.assertIn("consistent PostgreSQL dump", html)
+        self.assertNotIn("message bodies", html.split("These statistics", 1)[0])
 
 
 if __name__ == "__main__":

@@ -12,12 +12,14 @@ bash -n buzz-relay/assets-src/bin/relay-entrypoint.sh
 bash -n buzz-relay/assets-src/bin/buzz-admin.sh
 bash -n buzz-relay/assets-src/bin/resettable-service-entrypoint.sh
 bash -n buzz-relay/assets-src/bin/minio-init-entrypoint.sh
+bash -n buzz-relay/assets-src/bin/operations-entrypoint.sh
 bash -n buzz-relay/assets-src/bin/service-urls.sh
 bash -n buzz-relay/exports.sh
 bash -n buzz-relay/hooks/pre-start
 bash -n scripts/validate.sh
 bash -n scripts/run-umbrel-lint.sh
 bash -n tests/test_service_urls.sh
+bash -n tests/test_backup_worker.sh
 
 python3 -m py_compile scripts/check_upstream_buzz.py
 python3 -m py_compile scripts/generate_runtime_assets.py
@@ -25,6 +27,7 @@ python3 -m py_compile buzz-relay/assets-src/config-ui/server.py
 python3 scripts/generate_runtime_assets.py --check
 python3 -m unittest discover -s tests -v
 tests/test_service_urls.sh
+tests/test_backup_worker.sh
 
 runtime_test="$(mktemp -d)"
 trap 'rm -rf "$runtime_test"' EXIT
@@ -35,6 +38,7 @@ done
 APP_DATA_DIR="$runtime_test" buzz-relay/hooks/pre-start >/dev/null
 cmp buzz-relay/assets-src/bin/buzz-admin.sh "$runtime_test/runtime/bin/buzz-admin.sh"
 cmp buzz-relay/assets-src/bin/minio-init-entrypoint.sh "$runtime_test/runtime/bin/minio-init-entrypoint.sh"
+cmp buzz-relay/assets-src/bin/operations-entrypoint.sh "$runtime_test/runtime/bin/operations-entrypoint.sh"
 cmp buzz-relay/assets-src/bin/relay-entrypoint.sh "$runtime_test/runtime/bin/relay-entrypoint.sh"
 cmp buzz-relay/assets-src/bin/resettable-service-entrypoint.sh "$runtime_test/runtime/bin/resettable-service-entrypoint.sh"
 cmp buzz-relay/assets-src/bin/service-urls.sh "$runtime_test/runtime/bin/service-urls.sh"
@@ -52,11 +56,13 @@ ruby -e '
   proxy = services.fetch("app_proxy").fetch("environment")
   config = services.fetch("config")
   relay = services.fetch("relay")
+  operations = services.fetch("operations")
   postgres = services.fetch("postgres")
   minio_init = services.fetch("minio-init")
   manifest = YAML.load_file("buzz-relay/umbrel-app.yml")
   abort "app_proxy must target config" unless proxy == {"APP_HOST" => "buzz-relay_config_1", "APP_PORT" => 8080}
   abort "config must not publish a host port" if config.key?("ports")
+  abort "operations worker must not publish a host port" if operations.key?("ports")
   abort "shared gateway must not exist" if services.key?("gateway")
   abort "relay public port mapping missing" unless relay.fetch("ports") == ["${APP_BUZZ_RELAY_PUBLIC_PORT}:3000"]
   relay_env = relay.fetch("environment")
@@ -82,6 +88,8 @@ ruby -e '
   parsed_endpoint = URI.parse(minio_endpoint)
   abort "relay MinIO URL is invalid" unless parsed_endpoint.scheme == "http" && parsed_endpoint.host == minio_alias && parsed_endpoint.port == 9000 && parsed_endpoint.userinfo.nil? && [nil, "", "/"].include?(parsed_endpoint.path) && parsed_endpoint.query.nil? && parsed_endpoint.fragment.nil?
   abort "config health host is not collision-safe" unless config.fetch("environment").fetch("BUZZ_RELAY_HEALTH_HOST") == "buzz-relay_relay_1"
+  abort "config metrics host is not internal" unless config.fetch("environment").fetch("BUZZ_RELAY_METRICS_HOST") == "buzz-relay_relay_1"
+  abort "config MinIO health host must use the valid package alias" unless config.fetch("environment").fetch("BUZZ_MINIO_HEALTH_HOST") == minio_alias
   abort "MinIO initializer endpoint differs from relay" unless minio_init.fetch("environment").fetch("BUZZ_S3_ENDPOINT") == minio_endpoint
   postgres_health = postgres.fetch("healthcheck").fetch("test").join(" ")
   abort "Postgres healthcheck must authenticate over TCP" unless postgres_health.include?("PGPASSWORD") && postgres_health.include?("psql -h 127.0.0.1") && postgres_health.include?("SELECT 1")
@@ -89,6 +97,25 @@ ruby -e '
   abort "Redis healthcheck must use credential-safe environment authentication" unless redis_health.include?("REDISCLI_AUTH") && !redis_health.include?("redis-cli -a")
   abort "generic dependency URL leaked into Compose" if File.read("buzz-relay/docker-compose.yml").match?(%r{@(?:postgres|redis):|http://minio:})
   abort "launcher must use the authenticated app-proxy port" unless manifest.fetch("port") == 38633 && manifest.fetch("path") == ""
+  abort "generated download archives must be excluded from system backups" unless manifest.fetch("backupIgnore") == ["data/backups/*"]
+  abort "package version mismatch in config worker" unless config.fetch("environment").fetch("BUZZ_PACKAGE_VERSION") == manifest.fetch("version")
+  abort "package version mismatch in operations worker" unless operations.fetch("environment").fetch("BUZZ_PACKAGE_VERSION") == manifest.fetch("version")
+  abort "operations worker must use the pinned PostgreSQL image" unless operations.fetch("image") == postgres.fetch("image")
+  abort "operations worker must receive the generated service password" unless operations.fetch("environment").fetch("POSTGRES_PASSWORD") == "${APP_PASSWORD}"
+  abort "operations backup destination must be writable" unless operations.fetch("volumes").include?("${APP_DATA_DIR}/data/backups:/backups")
+  %w[postgres redis minio git git-cache].each do |name|
+    mount = "${APP_DATA_DIR}/data/#{name}:/source/#{name}:ro"
+    abort "operations source mount must be read-only: #{name}" unless operations.fetch("volumes").include?(mount)
+  end
+  operations_script = File.read("buzz-relay/assets-src/bin/operations-entrypoint.sh")
+  abort "backup must use a logical PostgreSQL dump" unless operations_script.include?("pg_dump") && operations_script.include?("--format=custom")
+  abort "backup archive must include component checksums" unless operations_script.include?("SHA256SUMS") && operations_script.include?("sha256sum manifest.json")
+  abort "backup must not archive transient Redis or git cache" if operations_script.match?(/tar .*source\/(?:redis|git-cache)/)
+  abort "relay backup pause handshake missing" unless File.read("buzz-relay/assets-src/bin/relay-entrypoint.sh").include?("backup-paused")
+  abort "MinIO backup pause handshake missing" unless File.read("buzz-relay/assets-src/bin/resettable-service-entrypoint.sh").include?("pause_for_backup")
+  server = File.read("buzz-relay/assets-src/config-ui/server.py")
+  abort "canonical Community URL must be immutable after initialization" unless server.include?("requiresNewCommunityReset")
+  abort "restore upload must not be exposed before runtime validation" if server.include?("restore-upload") || File.read("buzz-relay/assets-src/config-ui/static/index.html").include?(%q{type="file"})
   abort "public port export missing" unless File.read("buzz-relay/exports.sh").include?(%q{APP_BUZZ_RELAY_PUBLIC_PORT="38634"})
   abort "not-ready warning missing" unless File.read("README.md").include?("NOT READY FOR INSTALLATION") && manifest.fetch("description").include?("NOT READY FOR INSTALLATION")
 '

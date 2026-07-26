@@ -3,7 +3,7 @@ id: buzz-relay
 name: Buzz Relay
 tagline: "NOT READY: runtime verification pending"
 category: social
-version: "0.4.26-1a56b7c-5"
+version: "0.4.26-1a56b7c-6"
 port: 38633
 path: ""
 icon: icon.svg
@@ -24,9 +24,12 @@ description: >-
 
 
   The admin page accepts an npub or public-key hex and rejects nsec inputs. The
-  guided flow offers a discovered local Community URL or a final public WSS
-  Community URL. The relay starts in closed membership mode with NIP-42/NIP-98
-  authentication and authenticated media reads enabled.
+  guided flow selects one canonical local or public Community URL. After
+  initialization that URL is locked because it defines the Buzz community.
+  The authenticated admin page also shows metadata-only health statistics and
+  can create a sensitive local backup export. The relay starts in closed
+  membership mode with NIP-42/NIP-98 authentication and authenticated media
+  reads enabled.
 developer: Block, Inc.
 website: https://github.com/block/buzz
 dependencies: []
@@ -37,6 +40,9 @@ releaseNotes: >-
   NOT READY FOR INSTALLATION: the startup-chain corrections require a complete clean umbrelOS runtime test before use with real data.
   Uses app-unique dependency addresses, including a valid hyphenated MinIO network alias, percent-encodes arbitrary service passwords in database URLs, and requires an authenticated PostgreSQL readiness query.
   Adds a guided owner and Community URL setup flow with server-derived media and allowed-origin settings.
+  Locks the canonical Community URL after initialization because each URL identifies a distinct Buzz community.
+  Adds authenticated metadata-only relay health, aggregate usage statistics, storage totals, and a coordinated local backup export.
+  Restore remains intentionally unavailable until destructive clean-device recovery testing validates credential migration and rollback.
   Allows the official Buzz Desktop webview origins to complete join-policy discovery before the NIP-42 WebSocket flow.
   Uses an Umbrel-authenticated admin surface separated from the relay endpoint, closed relay authentication, authenticated media reads, and disabled external push delivery.
   Tracks official Block Buzz upstream main at commit 1a56b7c.
@@ -48,3 +54,5 @@ submission: https://github.com/jlmrt/umbrel-buzz-community-app-store
 defaultUsername: ""
 defaultPassword: ""
 torOnly: false
+backupIgnore:
+  - data/backups/*

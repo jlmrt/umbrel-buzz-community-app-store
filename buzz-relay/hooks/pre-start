@@ -21,6 +21,7 @@ decode_asset() {
 
 decode_asset asset-bin-buzz-admin.sh.b64 bin/buzz-admin.sh
 decode_asset asset-bin-minio-init-entrypoint.sh.b64 bin/minio-init-entrypoint.sh
+decode_asset asset-bin-operations-entrypoint.sh.b64 bin/operations-entrypoint.sh
 decode_asset asset-bin-relay-entrypoint.sh.b64 bin/relay-entrypoint.sh
 decode_asset asset-bin-resettable-service-entrypoint.sh.b64 bin/resettable-service-entrypoint.sh
 decode_asset asset-bin-service-urls.sh.b64 bin/service-urls.sh

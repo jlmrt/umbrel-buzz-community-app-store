@@ -16,6 +16,9 @@ RELAY_STOPPED_FILE="${CONFIG_DIR}/reset-relay-stopped"
 RESET_ACK_DIR="${CONFIG_DIR}/reset-acks"
 RESTART_REQUEST_FILE="${CONFIG_DIR}/restart-request"
 RESTART_COMPLETED_FILE="${CONFIG_DIR}/restart-completed"
+BACKUP_REQUEST_FILE="${CONFIG_DIR}/backup-request"
+BACKUP_ACK_DIR="${CONFIG_DIR}/backup-acks"
+BACKUP_ACK_FILE="${BACKUP_ACK_DIR}/relay-stopped"
 MINIO_INITIALIZED_FILE="${CONFIG_DIR}/minio-initialized"
 STATE_FILE="${CONFIG_DIR}/relay-state"
 GIT_DIR="${BUZZ_GIT_REPO_PATH:-/data/git}"
@@ -155,6 +158,18 @@ stop_relay() {
   RELAY_PID=""
 }
 
+pause_for_backup() {
+  local request_id="$1"
+  stop_relay
+  write_state backup-paused
+  write_marker "$BACKUP_ACK_FILE" "$request_id"
+  log "Relay writes paused for backup ${request_id}"
+  while [[ "$(first_line "$BACKUP_REQUEST_FILE")" == "$request_id" ]]; do
+    sleep 1
+  done
+  log "Backup ${request_id} released; restarting relay"
+}
+
 clear_directory() {
   local directory="$1"
   case "$directory" in
@@ -222,11 +237,17 @@ shutdown() {
 }
 
 trap shutdown INT TERM
-mkdir -p "$CONFIG_DIR" "$RESET_ACK_DIR" "$GIT_DIR" "$GIT_CACHE_DIR"
+mkdir -p "$CONFIG_DIR" "$RESET_ACK_DIR" "$BACKUP_ACK_DIR" "$GIT_DIR" "$GIT_CACHE_DIR"
 umask 077
 configure_buzz_service_urls
 
 while true; do
+  backup_id="$(first_line "$BACKUP_REQUEST_FILE")"
+  if [[ -n "$backup_id" ]]; then
+    pause_for_backup "$backup_id"
+    continue
+  fi
+
   reset_id="$(first_line "$RESET_REQUEST_FILE")"
   if [[ -n "$reset_id" && "$(first_line "$RESET_COMPLETED_FILE")" != "$reset_id" ]]; then
     perform_reset "$reset_id" || true
@@ -261,8 +282,13 @@ while true; do
   start_relay "$owner_pubkey" "$relay_url"
   action=""
   while kill -0 "$RELAY_PID" 2>/dev/null; do
+    backup_id="$(first_line "$BACKUP_REQUEST_FILE")"
     reset_id="$(first_line "$RESET_REQUEST_FILE")"
     restart_id="$(first_line "$RESTART_REQUEST_FILE")"
+    if [[ -n "$backup_id" ]]; then
+      action=backup
+      break
+    fi
     if [[ -n "$reset_id" ]]; then
       action=reset
       break
@@ -273,6 +299,11 @@ while true; do
     fi
     sleep 2
   done
+
+  if [[ "$action" == backup ]]; then
+    pause_for_backup "$backup_id"
+    continue
+  fi
 
   if [[ "$action" == reset ]]; then
     perform_reset "$reset_id" || true

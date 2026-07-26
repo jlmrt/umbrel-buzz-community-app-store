@@ -276,6 +276,19 @@ input:focus {
   background: var(--accent-soft);
 }
 
+.mode-options:disabled .mode-option {
+  cursor: default;
+}
+
+.mode-options:disabled .mode-option:not(:has(input:checked)) {
+  opacity: 0.55;
+}
+
+input:disabled {
+  background: #f1f3f0;
+  color: #4e5551;
+}
+
 .mode-option input {
   width: 17px;
   height: 17px;
@@ -322,6 +335,20 @@ input:focus {
   color: var(--muted);
   font-size: 0.73rem;
   line-height: 1.4;
+}
+
+.canonical-lock {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  color: #62420f;
+  font-size: 0.78rem;
+}
+
+.canonical-lock p {
+  margin: 4px 0 0;
+  line-height: 1.48;
 }
 
 .review-section {
@@ -467,6 +494,196 @@ button:disabled {
   line-height: 1.45;
 }
 
+.canonical-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  color: #62420f;
+  font-size: 0.78rem;
+  line-height: 1.48;
+}
+
+.admin-section {
+  margin-top: 14px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.admin-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.freshness {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.section-copy {
+  margin: 9px 0 18px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  min-width: 0;
+  min-height: 74px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafbf9;
+}
+
+.metric span,
+.metric strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.metric span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.metric strong {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.dependency-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.dependency-row span {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 680;
+}
+
+.dependency-row span[data-state="ready"] {
+  border-color: #9ac6b4;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.dependency-row span[data-state="error"] {
+  border-color: #dfa7ab;
+  background: var(--danger-soft);
+  color: #7b2027;
+}
+
+.sensitive-warning {
+  padding: 12px 13px;
+  border: 1px solid #dfa7ab;
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: #74262c;
+  font-size: 0.78rem;
+}
+
+.sensitive-warning p {
+  margin: 4px 0 0;
+  line-height: 1.48;
+}
+
+.backup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.download-link {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  padding: 0 16px;
+  border: 1px solid var(--strong-line);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 740;
+  text-decoration: none;
+}
+
+.download-link:hover {
+  background: #edf0ec;
+}
+
+.progress-track {
+  height: 7px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #e3e7e3;
+}
+
+.progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.backup-message {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.archive-details {
+  display: grid;
+  gap: 8px;
+  margin: 15px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.archive-details > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.archive-details dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.archive-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
 .result {
   margin-top: 12px;
   padding: 11px 13px;
@@ -565,5 +782,30 @@ code {
   .copy-field button,
   .form-actions button {
     width: 100%;
+  }
+
+  .admin-section {
+    padding: 19px 16px;
+  }
+
+  .admin-heading,
+  .backup-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .freshness {
+    max-width: none;
+    text-align: left;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .backup-actions button,
+  .download-link {
+    width: 100%;
+    justify-content: center;
   }
 }

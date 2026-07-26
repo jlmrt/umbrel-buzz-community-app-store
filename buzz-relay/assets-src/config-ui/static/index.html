@@ -58,6 +58,11 @@
           Buzz Desktop must be using the Nostr identity shown above. No API
           token is needed for the owner.
         </p>
+        <p class="canonical-note">
+          This Community URL is the permanent boundary for this installed
+          community. A different URL means a different community; it is not an
+          editable network setting.
+        </p>
         <button class="secondary-button" id="edit-button" type="button">Edit configuration</button>
       </section>
 
@@ -99,7 +104,7 @@
             <h2 id="community-title">Choose how you will connect</h2>
           </div>
 
-          <fieldset class="mode-options">
+          <fieldset class="mode-options" id="community-controls">
             <legend class="visually-hidden">Community connection</legend>
             <label class="mode-option">
               <input name="communityMode" type="radio" value="local" checked>
@@ -134,6 +139,15 @@
               placeholder="wss://community.example.com"
             >
             <p>Enter the final address after TLS and WebSocket forwarding are working.</p>
+          </div>
+
+          <div class="canonical-lock hidden" id="canonical-lock">
+            <strong>Canonical Community URL locked</strong>
+            <p>
+              Buzz uses this URL as the community boundary. Changing it would
+              create a different community, not move this one. A future
+              backup-and-reset workflow is required; this editor cannot change it.
+            </p>
           </div>
         </section>
 
@@ -179,6 +193,91 @@
       </form>
 
       <section class="result hidden" id="result" aria-live="polite"></section>
+
+      <section class="admin-section hidden" id="operations-panel" aria-labelledby="operations-title">
+        <div class="admin-heading">
+          <div>
+            <p class="eyebrow">Owner-only metadata</p>
+            <h2 id="operations-title">Relay operations</h2>
+          </div>
+          <span class="freshness" id="metrics-freshness">Checking</span>
+        </div>
+        <p class="section-copy">
+          These statistics contain health and aggregate metadata only. They do
+          not display messages, profiles, media names, public keys, or private content.
+        </p>
+
+        <div class="metric-grid">
+          <div class="metric"><span>Relay</span><strong id="metric-relay">Checking</strong></div>
+          <div class="metric"><span>Uptime</span><strong id="metric-uptime">--</strong></div>
+          <div class="metric"><span>Version</span><strong id="metric-version">--</strong></div>
+          <div class="metric"><span>Connections</span><strong id="metric-connections">--</strong></div>
+          <div class="metric"><span>Members</span><strong id="metric-members">--</strong></div>
+          <div class="metric"><span>Channels</span><strong id="metric-channels">--</strong></div>
+          <div class="metric"><span>Stored messages</span><strong id="metric-messages">--</strong></div>
+          <div class="metric"><span>Events this start</span><strong id="metric-events">--</strong></div>
+          <div class="metric"><span>Data storage</span><strong id="metric-storage">--</strong></div>
+          <div class="metric"><span>Last observed activity</span><strong id="metric-activity">--</strong></div>
+        </div>
+
+        <div class="dependency-row" aria-label="Dependency connectivity">
+          <span id="health-postgres">Postgres: checking</span>
+          <span id="health-redis">Redis: checking</span>
+          <span id="health-minio">MinIO: checking</span>
+          <span id="health-worker">Backup worker: checking</span>
+        </div>
+      </section>
+
+      <section class="admin-section hidden" id="backup-panel" aria-labelledby="backup-title">
+        <div class="admin-heading">
+          <div>
+            <p class="eyebrow">Local export</p>
+            <h2 id="backup-title">Backup</h2>
+          </div>
+          <span class="freshness" id="backup-state">Idle</span>
+        </div>
+        <p class="section-copy">
+          The archive contains a consistent PostgreSQL dump, object storage,
+          git repositories, configuration, and the generated relay identity.
+          Relay writes pause while it is created. Redis and git cache are excluded
+          because they are rebuilt automatically.
+        </p>
+        <div class="sensitive-warning">
+          <strong>Sensitive archive</strong>
+          <p>
+            Anyone with this file can access private community data and relay
+            secrets. Store it encrypted and delete unneeded copies.
+          </p>
+        </div>
+        <label class="check-row">
+          <input id="acknowledge-sensitive" type="checkbox">
+          <span>I understand this download contains private data and secrets.</span>
+        </label>
+        <div class="backup-actions">
+          <button id="create-backup" type="button">Create backup</button>
+          <a class="download-link hidden" id="download-backup" href="/api/backups/download">Download archive</a>
+        </div>
+        <div class="progress-track hidden" id="backup-progress" aria-label="Backup progress">
+          <span id="backup-progress-bar"></span>
+        </div>
+        <p class="backup-message" id="backup-message" aria-live="polite"></p>
+        <dl class="archive-details hidden" id="archive-details">
+          <div><dt>Created</dt><dd id="backup-created"></dd></div>
+          <div><dt>Size</dt><dd id="backup-size"></dd></div>
+          <div><dt>SHA-256</dt><dd id="backup-sha"></dd></div>
+        </dl>
+      </section>
+
+      <section class="admin-section hidden" id="restore-panel" aria-labelledby="restore-title">
+        <p class="eyebrow">Recovery</p>
+        <h2 id="restore-title">Restore</h2>
+        <p class="section-copy">
+          Archive upload and restore are intentionally unavailable until a
+          destructive clean-device recovery test verifies credential migration,
+          ownership, rollback, and service restart behavior. Use umbrelOS system
+          backups for supported full-device recovery.
+        </p>
+      </section>
 
       <footer>
         <span>Administration and relay traffic use separate endpoints.</span>

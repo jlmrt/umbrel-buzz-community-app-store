@@ -5,6 +5,8 @@ CONFIG_DIR="${BUZZ_CONFIG_DIR:-/config}"
 REQUEST_FILE="${CONFIG_DIR}/reset-request"
 RELAY_STOPPED_FILE="${CONFIG_DIR}/reset-relay-stopped"
 ACK_DIR="${CONFIG_DIR}/reset-acks"
+BACKUP_REQUEST_FILE="${CONFIG_DIR}/backup-request"
+BACKUP_ACK_DIR="${CONFIG_DIR}/backup-acks"
 SERVICE="${BUZZ_RESET_SERVICE:?set BUZZ_RESET_SERVICE}"
 CHILD_PID=""
 
@@ -145,6 +147,23 @@ perform_reset() {
   log "Reset ${request_id} complete"
 }
 
+pause_for_backup() {
+  request_id="$1"
+  backup_ack_file="${BACKUP_ACK_DIR}/${SERVICE}-stopped"
+  stop_child
+  write_marker "$backup_ack_file" "$request_id"
+  log "Paused for backup ${request_id}"
+  while [ "$(read_marker "$BACKUP_REQUEST_FILE")" = "$request_id" ]; do
+    sleep 1
+  done
+  start_child
+  if ! wait_until_ready; then
+    stop_child
+    return 1
+  fi
+  log "Resumed after backup ${request_id}"
+}
+
 shutdown() {
   stop_child
   exit 0
@@ -152,7 +171,7 @@ shutdown() {
 
 trap shutdown INT TERM
 service_paths
-mkdir -p "$ACK_DIR" "$DATA_DIR"
+mkdir -p "$ACK_DIR" "$BACKUP_ACK_DIR" "$DATA_DIR"
 start_child
 
 while true; do
@@ -167,6 +186,17 @@ while true; do
   if [ -n "$request_id" ] && [ "$(read_marker "$ACK_FILE")" != "$request_id" ]; then
     if ! perform_reset "$request_id"; then
       log "Reset ${request_id} failed; retrying"
+      sleep 3
+      if [ -z "$CHILD_PID" ]; then
+        start_child
+      fi
+    fi
+  fi
+
+  backup_id="$(read_marker "$BACKUP_REQUEST_FILE")"
+  if [ "$SERVICE" = minio ] && [ -n "$backup_id" ] && [ "$(read_marker "${BACKUP_ACK_DIR}/${SERVICE}-stopped")" != "$backup_id" ]; then
+    if ! pause_for_backup "$backup_id"; then
+      log "Backup pause ${backup_id} failed; retrying service start"
       sleep 3
       if [ -z "$CHILD_PID" ]; then
         start_child

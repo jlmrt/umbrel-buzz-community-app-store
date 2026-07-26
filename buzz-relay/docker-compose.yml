@@ -11,8 +11,8 @@ services:
     user: "0:0"
     command: >
       sh -euc '
-        mkdir -p /data/config/reset-acks /data/git /data/git-cache /data/postgres /data/redis /data/minio
-        chown -R 1000:1000 /data/config /data/git /data/git-cache
+        mkdir -p /data/config/reset-acks /data/config/backup-acks /data/backups /data/git /data/git-cache /data/postgres /data/redis /data/minio
+        chown -R 1000:1000 /data/config /data/backups /data/git /data/git-cache
         chmod 700 /data/config
       '
     volumes:
@@ -36,15 +36,57 @@ services:
       BUZZ_SETUP_STATIC_DIR: /app/static
       BUZZ_RELAY_HEALTH_HOST: buzz-relay_relay_1
       BUZZ_RELAY_HEALTH_PORT: "8080"
+      BUZZ_RELAY_METRICS_HOST: buzz-relay_relay_1
+      BUZZ_RELAY_METRICS_PORT: "9102"
+      BUZZ_MINIO_HEALTH_HOST: buzz-relay-minio
+      BUZZ_MINIO_HEALTH_PORT: "9000"
       BUZZ_DEFAULT_RELAY_URL: ws://${APP_DOMAIN}:${APP_BUZZ_RELAY_PUBLIC_PORT}
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-6"
+      BUZZ_BACKUP_DIR: /backups
+      BUZZ_BACKUP_MAX_BYTES: "53687091200"
     volumes:
       - ${APP_DATA_DIR}/data/config:/config
+      - ${APP_DATA_DIR}/data/backups:/backups:ro
       - ${APP_DATA_DIR}/runtime/config-ui:/app:ro
     tmpfs:
       - /tmp:size=16m,mode=1777
     depends_on:
       setup:
         condition: service_completed_successfully
+
+  operations:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    user: "0:0"
+    init: true
+    restart: on-failure
+    read_only: true
+    entrypoint: ["/opt/umbrel-buzz/operations-entrypoint.sh"]
+    environment:
+      BUZZ_CONFIG_DIR: /config
+      BUZZ_BACKUP_DIR: /backups
+      BUZZ_BACKUP_SOURCE_ROOT: /source
+      BUZZ_BACKUP_MAX_BYTES: "53687091200"
+      BUZZ_PACKAGE_VERSION: "0.4.26-1a56b7c-6"
+      BUZZ_POSTGRES_HOST: buzz-relay_postgres_1
+      POSTGRES_DB: buzz
+      POSTGRES_USER: buzz
+      POSTGRES_PASSWORD: ${APP_PASSWORD}
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config
+      - ${APP_DATA_DIR}/data/backups:/backups
+      - ${APP_DATA_DIR}/data/postgres:/source/postgres:ro
+      - ${APP_DATA_DIR}/data/redis:/source/redis:ro
+      - ${APP_DATA_DIR}/data/minio:/source/minio:ro
+      - ${APP_DATA_DIR}/data/git:/source/git:ro
+      - ${APP_DATA_DIR}/data/git-cache:/source/git-cache:ro
+      - ${APP_DATA_DIR}/runtime/bin:/opt/umbrel-buzz:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
   relay:
     image: ghcr.io/block/buzz:sha-1a56b7c@sha256:c0bc6af1c9b4e67e8f159307f4b7a0acb18dfc0edbace4fce5d0fe2932dafe51

@@ -9,9 +9,12 @@ import json
 import mimetypes
 import os
 import re
+import stat
 import tempfile
 import threading
+import time
 import uuid
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,7 +25,14 @@ CONFIG_DIR = Path(os.environ.get("BUZZ_CONFIG_DIR", "/config"))
 STATIC_DIR = Path(os.environ.get("BUZZ_SETUP_STATIC_DIR", "/app/static"))
 RELAY_HEALTH_HOST = os.environ.get("BUZZ_RELAY_HEALTH_HOST", "buzz-relay_relay_1")
 RELAY_HEALTH_PORT = int(os.environ.get("BUZZ_RELAY_HEALTH_PORT", "8080"))
+RELAY_METRICS_HOST = os.environ.get("BUZZ_RELAY_METRICS_HOST", RELAY_HEALTH_HOST)
+RELAY_METRICS_PORT = int(os.environ.get("BUZZ_RELAY_METRICS_PORT", "9102"))
+MINIO_HEALTH_HOST = os.environ.get("BUZZ_MINIO_HEALTH_HOST", "buzz-relay-minio")
+MINIO_HEALTH_PORT = int(os.environ.get("BUZZ_MINIO_HEALTH_PORT", "9000"))
 DEFAULT_RELAY_URL = os.environ.get("BUZZ_DEFAULT_RELAY_URL", "")
+PACKAGE_VERSION = os.environ.get("BUZZ_PACKAGE_VERSION", "unknown")
+BACKUP_DIR = Path(os.environ.get("BUZZ_BACKUP_DIR", "/backups"))
+BACKUP_MAX_BYTES = int(os.environ.get("BUZZ_BACKUP_MAX_BYTES", "53687091200"))
 
 OWNER_FILE = CONFIG_DIR / "relay-owner-pubkey"
 PENDING_OWNER_FILE = CONFIG_DIR / "pending-owner-pubkey"
@@ -36,11 +46,31 @@ RESET_ERROR_FILE = CONFIG_DIR / "reset-error"
 RESTART_REQUEST_FILE = CONFIG_DIR / "restart-request"
 RESTART_COMPLETED_FILE = CONFIG_DIR / "restart-completed"
 RELAY_STATE_FILE = CONFIG_DIR / "relay-state"
+BACKUP_REQUEST_FILE = CONFIG_DIR / "backup-request"
+BACKUP_STATE_FILE = CONFIG_DIR / "backup-state"
+BACKUP_PROGRESS_FILE = CONFIG_DIR / "backup-progress"
+BACKUP_MESSAGE_FILE = CONFIG_DIR / "backup-message"
+BACKUP_CURRENT_ID_FILE = CONFIG_DIR / "backup-current-id"
+BACKUP_LATEST_NAME_FILE = CONFIG_DIR / "backup-latest-name"
+BACKUP_LATEST_SIZE_FILE = CONFIG_DIR / "backup-latest-size"
+BACKUP_LATEST_SHA_FILE = CONFIG_DIR / "backup-latest-sha256"
+BACKUP_LATEST_CREATED_FILE = CONFIG_DIR / "backup-latest-created-at"
+OPERATIONS_HEARTBEAT_FILE = CONFIG_DIR / "operations-heartbeat"
+STORAGE_STATS_FILE = CONFIG_DIR / "storage-stats"
+ACTIVITY_COUNT_FILE = CONFIG_DIR / "activity-observed-count"
+ACTIVITY_AT_FILE = CONFIG_DIR / "activity-observed-at"
 
 HEX_KEY_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+BACKUP_NAME_RE = re.compile(r"^buzz-relay-backup-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.tar$")
+PROMETHEUS_SAMPLE_RE = re.compile(
+    r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^\r\n]*\})?\s+([-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)$"
+)
 BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 BECH32_LOOKUP = {char: index for index, char in enumerate(BECH32_CHARSET)}
 WRITE_LOCK = threading.Lock()
+STATS_LOCK = threading.Lock()
+ACTIVITY_LOCK = threading.Lock()
+STATS_CACHE: tuple[float, dict[str, object]] | None = None
 DESKTOP_ORIGINS = ("tauri://localhost", "http://tauri.localhost")
 
 
@@ -206,19 +236,197 @@ def select_community_url(payload: dict[str, object]) -> tuple[str, str]:
     raise InputError("Choose Local testing or Public community.")
 
 
-def relay_is_ready() -> bool:
+def http_get(host: str, port: int, path: str, limit: int = 2 * 1024 * 1024) -> tuple[int, bytes]:
     connection: http.client.HTTPConnection | None = None
     try:
-        connection = http.client.HTTPConnection(
-            RELAY_HEALTH_HOST, RELAY_HEALTH_PORT, timeout=0.75
-        )
-        connection.request("GET", "/_readiness")
-        return connection.getresponse().status == HTTPStatus.OK
-    except (OSError, http.client.HTTPException):
-        return False
+        connection = http.client.HTTPConnection(host, port, timeout=0.75)
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read(limit + 1)
+        if len(body) > limit:
+            raise ValueError("Internal response exceeded the allowed size.")
+        return response.status, body
     finally:
         if connection:
             connection.close()
+
+
+def internal_json(host: str, port: int, path: str) -> tuple[int | None, dict[str, object]]:
+    try:
+        status, body = http_get(host, port, path, 64 * 1024)
+        parsed = json.loads(body.decode("utf-8"))
+        return status, parsed if isinstance(parsed, dict) else {}
+    except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError, http.client.HTTPException):
+        return None, {}
+
+
+def parse_prometheus_metrics(body: str) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        match = PROMETHEUS_SAMPLE_RE.fullmatch(line.strip())
+        if not match:
+            continue
+        name, raw_value = match.groups()
+        try:
+            value = float(raw_value)
+        except ValueError:
+            continue
+        if value != value or value in {float("inf"), float("-inf")}:
+            continue
+        totals[name] = totals.get(name, 0.0) + value
+    return totals
+
+
+def relay_metrics() -> dict[str, int | None]:
+    result: dict[str, int | None] = {
+        "activeConnections": None,
+        "eventsReceivedSinceStart": None,
+        "requestsSinceStart": None,
+        "messageCount": None,
+        "channelCount": None,
+        "memberCount": None,
+        "userCount": None,
+    }
+    try:
+        status, body = http_get(RELAY_METRICS_HOST, RELAY_METRICS_PORT, "/metrics")
+        if status != HTTPStatus.OK:
+            return result
+        totals = parse_prometheus_metrics(body.decode("utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, http.client.HTTPException):
+        return result
+
+    mapping = {
+        "activeConnections": "buzz_ws_connections_active",
+        "eventsReceivedSinceStart": "buzz_events_received_total",
+        "requestsSinceStart": "http_requests_total",
+        "messageCount": "buzz_total_messages",
+        "channelCount": "buzz_total_channels",
+        "memberCount": "buzz_total_relay_members",
+        "userCount": "buzz_total_users",
+    }
+    for output_name, metric_name in mapping.items():
+        if metric_name in totals:
+            result[output_name] = max(0, int(totals[metric_name]))
+    observe_activity(result["eventsReceivedSinceStart"])
+    return result
+
+
+def observe_activity(event_count: int | None) -> None:
+    if event_count is None:
+        return
+    with ACTIVITY_LOCK:
+        try:
+            previous = int(read_first_line(ACTIVITY_COUNT_FILE))
+        except ValueError:
+            previous = event_count
+        if event_count > previous:
+            atomic_write(
+                ACTIVITY_AT_FILE,
+                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            )
+        atomic_write(ACTIVITY_COUNT_FILE, str(event_count))
+
+
+def read_storage_stats() -> dict[str, object]:
+    allowed = {
+        "config_kib",
+        "postgres_kib",
+        "redis_kib",
+        "minio_kib",
+        "git_kib",
+        "git_cache_kib",
+        "backups_kib",
+    }
+    values: dict[str, int] = {name: 0 for name in allowed}
+    measured_at = ""
+    try:
+        lines = STORAGE_STATS_FILE.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        lines = []
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator:
+            continue
+        if key == "measured_at":
+            measured_at = value if len(value) <= 32 else ""
+        elif key in allowed:
+            try:
+                values[key] = max(0, int(value))
+            except ValueError:
+                pass
+    data_kib = sum(value for key, value in values.items() if key != "backups_kib")
+    return {
+        "measuredAt": measured_at,
+        "dataBytes": data_kib * 1024,
+        "backupBytes": values["backups_kib"] * 1024,
+        "components": {
+            "database": values["postgres_kib"] * 1024,
+            "objectStorage": values["minio_kib"] * 1024,
+            "repositories": values["git_kib"] * 1024,
+            "cache": (values["redis_kib"] + values["git_cache_kib"]) * 1024,
+            "configuration": values["config_kib"] * 1024,
+        },
+    }
+
+
+def operations_online() -> bool:
+    try:
+        heartbeat = int(read_first_line(OPERATIONS_HEARTBEAT_FILE))
+    except ValueError:
+        return False
+    return 0 <= int(time.time()) - heartbeat <= 20
+
+
+def operational_stats() -> dict[str, object]:
+    global STATS_CACHE
+    now = time.monotonic()
+    with STATS_LOCK:
+        if STATS_CACHE and now - STATS_CACHE[0] < 4:
+            return STATS_CACHE[1]
+
+        status_code, relay_status = internal_json(RELAY_HEALTH_HOST, RELAY_HEALTH_PORT, "/_status")
+        readiness_code, readiness = internal_json(
+            RELAY_HEALTH_HOST, RELAY_HEALTH_PORT, "/_readiness"
+        )
+        minio_status: int | None = None
+        try:
+            minio_status, _ = http_get(
+                MINIO_HEALTH_HOST, MINIO_HEALTH_PORT, "/minio/health/ready", 4096
+            )
+        except (OSError, ValueError, http.client.HTTPException):
+            pass
+
+        ready = readiness_code == HTTPStatus.OK
+        postgres = True if ready else readiness.get("postgres")
+        redis = True if ready else readiness.get("redis")
+        if not isinstance(postgres, bool):
+            postgres = None
+        if not isinstance(redis, bool):
+            redis = None
+
+        metrics = relay_metrics()
+        snapshot: dict[str, object] = {
+            "metadataOnly": True,
+            "packageVersion": PACKAGE_VERSION,
+            "relayVersion": relay_status.get("version") if status_code == HTTPStatus.OK else None,
+            "uptimeSeconds": relay_status.get("uptime_seconds") if status_code == HTTPStatus.OK else None,
+            "relayReachable": status_code == HTTPStatus.OK,
+            "relayReady": ready,
+            "relayState": read_first_line(RELAY_STATE_FILE) or "unknown",
+            "connectivity": {
+                "postgres": postgres,
+                "redis": redis,
+                "objectStorage": minio_status == HTTPStatus.OK if minio_status is not None else None,
+                "operationsWorker": operations_online(),
+            },
+            "counts": metrics,
+            "lastObservedActivityAt": read_first_line(ACTIVITY_AT_FILE),
+            "storage": read_storage_stats(),
+        }
+        STATS_CACHE = (now, snapshot)
+        return snapshot
 
 
 def current_key() -> tuple[str, str] | None:
@@ -228,6 +436,82 @@ def current_key() -> tuple[str, str] | None:
         return public_hex, npub
     except InputError:
         return None
+
+
+def latest_backup_path() -> Path | None:
+    name = read_first_line(BACKUP_LATEST_NAME_FILE)
+    if not BACKUP_NAME_RE.fullmatch(name):
+        return None
+    path = BACKUP_DIR / name
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return None
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+        return None
+    return path
+
+
+def backup_status_payload() -> dict[str, object]:
+    request_id = read_first_line(BACKUP_REQUEST_FILE)
+    latest_path = latest_backup_path()
+    latest_size = 0
+    if latest_path:
+        try:
+            latest_size = latest_path.stat().st_size
+        except FileNotFoundError:
+            latest_path = None
+    try:
+        progress = max(0, min(100, int(read_first_line(BACKUP_PROGRESS_FILE) or "0")))
+    except ValueError:
+        progress = 0
+    return {
+        "state": read_first_line(BACKUP_STATE_FILE) or "idle",
+        "progress": progress,
+        "message": read_first_line(BACKUP_MESSAGE_FILE),
+        "running": bool(request_id),
+        "requestId": request_id,
+        "workerOnline": operations_online(),
+        "maxBytes": BACKUP_MAX_BYTES,
+        "latest": {
+            "available": latest_path is not None,
+            "name": latest_path.name if latest_path else "",
+            "sizeBytes": latest_size,
+            "sha256": read_first_line(BACKUP_LATEST_SHA_FILE) if latest_path else "",
+            "createdAt": read_first_line(BACKUP_LATEST_CREATED_FILE) if latest_path else "",
+            "downloadUrl": "/api/backups/download" if latest_path else "",
+        },
+        "restoreAvailable": False,
+    }
+
+
+def request_backup(payload: dict[str, object]) -> tuple[int, dict[str, object]]:
+    if payload.get("acknowledgeSensitive") is not True:
+        raise InputError("Confirm that the downloaded archive contains sensitive private data.")
+    with WRITE_LOCK:
+        key = current_key()
+        if not key or not read_first_line(RELAY_URL_FILE):
+            return HTTPStatus.CONFLICT, {"error": "Configure and start the community first."}
+        if read_first_line(RESET_REQUEST_FILE) or read_first_line(RESTART_REQUEST_FILE):
+            return HTTPStatus.CONFLICT, {
+                "error": "Wait for the current reset or restart to finish before creating a backup."
+            }
+        if read_first_line(BACKUP_REQUEST_FILE):
+            return HTTPStatus.CONFLICT, {"error": "A backup is already in progress."}
+        if not operations_online():
+            return HTTPStatus.SERVICE_UNAVAILABLE, {
+                "error": "The internal backup worker is not available."
+            }
+        request_id = str(uuid.uuid4())
+        atomic_write(BACKUP_CURRENT_ID_FILE, request_id)
+        atomic_write(BACKUP_STATE_FILE, "queued")
+        atomic_write(BACKUP_PROGRESS_FILE, "0")
+        atomic_write(BACKUP_MESSAGE_FILE, "Backup queued")
+        atomic_write(BACKUP_REQUEST_FILE, request_id)
+        return HTTPStatus.ACCEPTED, {
+            "message": "Backup started. Relay writes will pause briefly.",
+            "backupRequestId": request_id,
+        }
 
 
 def status_payload() -> dict[str, object]:
@@ -243,6 +527,7 @@ def status_payload() -> dict[str, object]:
     reset_id = read_first_line(RESET_REQUEST_FILE)
     restart_id = read_first_line(RESTART_REQUEST_FILE)
     state = read_first_line(RELAY_STATE_FILE) or ("waiting-for-configuration" if not key else "starting")
+    stats = operational_stats()
     return {
         "configured": key is not None and bool(relay_url),
         "ownerConfigured": key is not None,
@@ -251,7 +536,7 @@ def status_payload() -> dict[str, object]:
         "localCommunityUrl": local_url,
         "communityMode": stored_mode,
         "communityUrl": relay_url,
-        "relayReady": bool(key) and bool(relay_url) and relay_is_ready(),
+        "relayReady": bool(key) and bool(relay_url) and stats["relayReady"],
         "relayState": state,
         "resetting": bool(reset_id),
         "resetRequestId": reset_id,
@@ -260,6 +545,8 @@ def status_payload() -> dict[str, object]:
         "restarting": bool(restart_id),
         "restartRequestId": restart_id,
         "lastRestartId": read_first_line(RESTART_COMPLETED_FILE),
+        "operations": stats,
+        "backup": backup_status_payload(),
     }
 
 
@@ -273,11 +560,26 @@ def apply_configuration(payload: dict[str, object]) -> tuple[int, dict[str, obje
     media_url, cors_origins = derive_runtime_urls(relay_url)
 
     with WRITE_LOCK:
+        if read_first_line(BACKUP_REQUEST_FILE):
+            return HTTPStatus.CONFLICT, {
+                "error": "Wait for the current backup to finish before changing configuration."
+            }
         existing = current_key()
         existing_hex = existing[0] if existing else ""
+        existing_relay_url = read_first_line(RELAY_URL_FILE)
+        if existing_hex and existing_relay_url and existing_relay_url != relay_url:
+            return HTTPStatus.CONFLICT, {
+                "error": (
+                    "The canonical Community URL is fixed after initialization. "
+                    "A different URL is a different Buzz community and requires a future "
+                    "explicit backup-and-reset workflow. No data was changed."
+                ),
+                "requiresNewCommunityReset": True,
+                "currentCommunityUrl": existing_relay_url,
+            }
         network_changed = any(
             (
-                read_first_line(RELAY_URL_FILE) != relay_url,
+                existing_relay_url != relay_url,
                 read_first_line(MEDIA_URL_FILE) != media_url,
                 read_first_line(CORS_FILE) != cors_origins,
                 read_first_line(COMMUNITY_MODE_FILE) != community_mode,
@@ -366,9 +668,39 @@ class SetupHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_backup_archive(self) -> None:
+        path = latest_backup_path()
+        if path is None:
+            self.send_json(HTTPStatus.NOT_FOUND, {"error": "No backup archive is available."})
+            return
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags)
+        except OSError:
+            self.send_json(HTTPStatus.NOT_FOUND, {"error": "Backup archive is unavailable."})
+            return
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                self.send_json(HTTPStatus.NOT_FOUND, {"error": "Backup archive is invalid."})
+                return
+            self.send_response(HTTPStatus.OK)
+            self.security_headers("application/x-tar")
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+            self.send_header("Content-Length", str(metadata.st_size))
+            self.end_headers()
+            while True:
+                chunk = handle.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/api/status":
             self.send_json(HTTPStatus.OK, status_payload())
+            return
+        if self.path == "/api/backups/download":
+            self.send_backup_archive()
             return
         static_files = {
             "/": "index.html",
@@ -421,6 +753,10 @@ class SetupHandler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/apply":
                 status, response = apply_configuration(payload)
+                self.send_json(status, response)
+                return
+            if self.path == "/api/backups":
+                status, response = request_backup(payload)
                 self.send_json(status, response)
                 return
             self.send_json(HTTPStatus.NOT_FOUND, {"error": "Not found."})

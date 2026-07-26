@@ -17,6 +17,7 @@ APP_DIR = ROOT / "buzz-relay"
 ASSETS = {
     "bin/buzz-admin.sh": "assets-src/bin/buzz-admin.sh",
     "bin/minio-init-entrypoint.sh": "assets-src/bin/minio-init-entrypoint.sh",
+    "bin/operations-entrypoint.sh": "assets-src/bin/operations-entrypoint.sh",
     "bin/relay-entrypoint.sh": "assets-src/bin/relay-entrypoint.sh",
     "bin/resettable-service-entrypoint.sh": "assets-src/bin/resettable-service-entrypoint.sh",
     "bin/service-urls.sh": "assets-src/bin/service-urls.sh",

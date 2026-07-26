@@ -26,7 +26,9 @@ Enter the relay owner's `npub` or 64-character hexadecimal public key, then
 choose **Local testing** or **Public community**. Local testing uses the
 Community URL discovered from Umbrel. Public community asks only for the final
 root `wss://` address after the operator has configured TLS and WebSocket
-forwarding. Media and allowed-origin values are derived automatically.
+forwarding. This selects the canonical Community URL once; it is not a mode
+that can later promote or migrate the same community. Media and allowed-origin
+values are derived automatically.
 
 The page rejects `nsec` values. Never paste a Nostr private key into the app,
 repository, logs, or support messages. Raw 64-character hex is ambiguous, so
@@ -48,10 +50,13 @@ The relay allows the official Buzz Desktop webview origins so Desktop can read
 the join policy before opening its WebSocket. This does not bypass Nostr
 authentication or membership checks.
 
+Buzz uses the URL and `Host` as the community boundary. The admin page locks the
+canonical Community URL after initialization and rejects attempts to change it.
+A different URL is a different Buzz community, not an editable network setting.
+
 Changing the owner requires typing `RESET` and confirming a full reset. It
 deletes PostgreSQL, Redis, MinIO, git data and cache, and the generated relay
-identity. Changing network settings restarts the relay; changing the canonical
-host can select or create a different Buzz community.
+identity. Create and download a backup first.
 
 ## Endpoints And Public Access
 
@@ -85,9 +90,26 @@ Persistent state is under `~/umbrel/app-data/buzz-relay/data/`:
 - `config/`: public settings, reset state, and generated relay secrets
 - `postgres/`, `redis/`, and `minio/`: database, cache, and object data
 - `git/` and `git-cache/`: repositories and pack cache
+- `backups/`: the latest operator-created export archive
 
-Umbrel derives `APP_PASSWORD` from the Umbrel seed. The supported low-risk
-recovery path is a same-seed full-system restore:
+The authenticated admin page can create a local export. It pauses relay writes,
+stops MinIO, makes a consistent PostgreSQL custom-format dump, and archives the
+generated relay identity, configuration, object storage, and git repositories.
+Redis and git cache are excluded because they are rebuilt. The archive includes
+private content and secrets; download it, verify the displayed SHA-256, and
+store it encrypted. Creating an export requires free space for staging and is
+limited to 50 GiB of source data by default. The latest export stays in
+`data/backups/` until replaced or the app is uninstalled; that directory is
+excluded from umbrelOS system backups to avoid recursively backing it up.
+
+**App-level archive restore is not implemented.** A safe restore must validate
+the archive, migrate credentials, restore ownership, coordinate every service,
+and roll back on failure. It will remain unavailable until a destructive clean
+device recovery test proves that path.
+
+Umbrel derives `APP_PASSWORD` from the Umbrel seed. The current supported
+low-risk recovery path remains an umbrelOS same-seed full-system restore or this
+manual stopped-tree procedure:
 
 1. Stop Buzz Relay and record the package version and image digest.
 2. Back up the complete `~/umbrel/app-data/buzz-relay/` tree while stopped,
@@ -98,7 +120,18 @@ recovery path is a same-seed full-system restore:
    and git data before upgrading.
 
 An app-data-only restore to a different-seed host requires credential migration
-or logical export/import and is not supported by this package.
+or a tested logical import and is not supported by this package. Use the
+umbrelOS **Backups** feature for supported full-device backup and recovery.
+
+## Operations
+
+The authenticated admin page shows relay version and uptime, restart state,
+PostgreSQL/Redis/MinIO connectivity, aggregate member/channel/message/event
+counts when upstream metrics are available, storage totals, and the time when
+event activity was last observed. These are metadata-only aggregates; the page
+does not query or display message bodies, profiles, media names, member keys, or
+other private content. Admin APIs remain behind Umbrel App Proxy and are never
+served on relay port `38634`.
 
 ## Security
 
